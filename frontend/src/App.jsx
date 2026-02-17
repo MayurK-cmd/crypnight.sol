@@ -4,6 +4,7 @@ import SignupPage from './components/auth/Signup'
 import Dashboard from './components/auth/Dashboard'
 import Setup from './components/auth/Setup'
 import Profile from './components/auth/Profile'
+import Redirect from './components/auth/Redirect'
 import { AuthProvider } from './context/AuthContext';
 import SolanaProvider from './wallet/WalletProvider';
 import './App.css'
@@ -24,6 +25,7 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/setup" element={<Setup />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/redirect" element={<Redirect />} />
 
       </Routes>
       </BrowserRouter>

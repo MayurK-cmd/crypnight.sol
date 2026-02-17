@@ -38,7 +38,7 @@ export default function Login() {
       const token = res.data.session.access_token;
       login(token);
       showToast("Access Granted. Loading your stats...");
-      setTimeout(() => navigate('/setup'), 1000);
+      setTimeout(() => navigate('/redirect'), 1000);
     } catch (err) {
       showToast(err.response?.data?.error || 'Invalid credentials', 'error');
     } finally {

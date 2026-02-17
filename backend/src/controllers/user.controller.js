@@ -95,6 +95,7 @@ export const setTier = async (req, res) => {
     .update({
       tier,
       rating: defaultRatings[tier],
+      is_setup_complete: true,
     })
     .eq('id', userId);
 
