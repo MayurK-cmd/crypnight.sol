@@ -33,6 +33,9 @@ export default function Dashboard() {
           <Link to="/leaderboard" className="flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl font-bold transition-all">
             <Trophy size={20} /> Rankings
           </Link>
+          <Link to="/solo" className="flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 rounded-xl font-bold transition-all">
+            <Zap size={20} /> Solo
+          </Link>
         </nav>
 
         <button 
