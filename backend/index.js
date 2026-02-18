@@ -10,10 +10,16 @@ dotenv.config();
 
 const app = express();
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  process.env.CORS_ORIGIN
+].filter(Boolean);
+
 app.use(cors({
-    origin: [process.env.CORS_ORIGIN || 'http://localhost:5173'],
-    credentials: true,
+  origin: allowedOrigins,
+  credentials: true,
 }));
+
 app.use(express.json());
 app.get('/health', (req, res) => {
     res.status(200).json({ message: 'Server is healthy' });
