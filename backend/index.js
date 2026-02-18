@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 
 import authRoutes from './src/routes/auth.routes.js';
 import userRoutes from './src/routes/user.routes.js';
+import puzzleRoutes from './src/routes/puzzle.routes.js';
+import soloRoutes from './src/routes/solo.routes.js';
 dotenv.config();
 
 const app = express();
@@ -18,6 +20,8 @@ app.get('/health', (req, res) => {
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/puzzle', puzzleRoutes);
+app.use('/api/solo', soloRoutes);
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
 });
