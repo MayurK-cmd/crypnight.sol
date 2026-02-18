@@ -1,9 +1,11 @@
 import express from "express";
 import { verifyUser } from "../middleware/auth.middleware.js";
-import { submitSoloAttempt } from "../controllers/solo.controller.js";
+import { startSoloSession, submitSoloMove, submitSoloAttempt } from "../controllers/solo.controller.js";
 
 const router = express.Router();
-
+   
+router.post("/start", verifyUser, startSoloSession);
+router.post("/move", verifyUser, submitSoloMove);
 router.post("/submit", verifyUser, submitSoloAttempt);
 
 export default router;
