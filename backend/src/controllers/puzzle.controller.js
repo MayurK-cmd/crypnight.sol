@@ -1,10 +1,14 @@
-import { supabase } from "../config/supabase";
+import { supabase } from "../config/supabase.js";
+import { loadPuzzles, getPuzzleByRating } from "../services/puzzleLoader.js";
 
 export const getPuzzleForUser = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // 1️⃣ Get user tier
+    // Load puzzles into memory (cached after first load)
+    await loadPuzzles();
+
+    // Get user tier
     const { data: user, error: userError } = await supabase
       .from("users")
       .select("tier")
@@ -23,44 +27,20 @@ export const getPuzzleForUser = async (req, res) => {
       beginner: [800, 1200],
       intermediate: [1200, 1600],
       pro: [1600, 1900],
-      gm: [1900, 2000],
+      gm: [1900, 2500],
+      grandmaster: [1900, 2500],
+      professional: [1600, 1900]
     };
 
-    const [min, max] = ranges[user.tier];
+    const [min, max] = ranges[user.tier] || ranges.intermediate;
 
-    // 2️⃣ Count puzzles in range
-    const { count, error: countError } = await supabase
-      .from("puzzles")
-      .select("*", { count: "exact", head: true })
-      .gte("rating", min)
-      .lte("rating", max);
+    // Get random puzzle from memory cache
+    const puzzle = getPuzzleByRating(min, max);
 
-    if (countError) {
-      return res.status(400).json({ error: countError.message });
-    }
-
-    if (!count) {
-      return res.status(404).json({ error: "No puzzles found" });
-    }
-
-    const randomOffset = Math.floor(Math.random() * count);
-
-    // 3️⃣ Fetch puzzle
-    const { data, error } = await supabase
-      .from("puzzles")
-      .select("*")
-      .gte("rating", min)
-      .lte("rating", max)
-      .range(randomOffset, randomOffset);
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    res.json({ puzzle: data[0] });
+    res.json({ puzzle });
 
   } catch (err) {
     console.error("Puzzle fetch error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message || "Internal server error" });
   }
 };

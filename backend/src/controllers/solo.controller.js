@@ -1,5 +1,6 @@
 import { supabase } from "../config/supabase.js";
 import { Chess } from "chess.js";
+import { getPuzzleById } from "../services/puzzleLoader.js";
 
 
 // 🔥 START SESSION
@@ -60,13 +61,14 @@ export const submitSoloMove = async (req, res) => {
       return res.status(400).json({ error: "Session already failed" });
     }
 
-    const { data: puzzle } = await supabase
-      .from("puzzles")
-      .select("*")
-      .eq("puzzle_id", session.puzzle_id)
-      .single();
+    // Get puzzle from memory cache
+    const puzzle = getPuzzleById(session.puzzle_id);
+    
+    if (!puzzle) {
+      return res.status(404).json({ error: "Puzzle not found" });
+    }
 
-    const correctMoves = puzzle.moves.split(" ");
+    const correctMoves = (puzzle.moves || puzzle.Moves).split(" ");
 
     const expectedMove = correctMoves[session.progress_index];
 
@@ -122,13 +124,14 @@ export const submitSoloAttempt = async (req, res) => {
       return res.status(400).json({ error: "Invalid session" });
     }
 
-    const { data: puzzle } = await supabase
-      .from("puzzles")
-      .select("*")
-      .eq("puzzle_id", session.puzzle_id)
-      .single();
+    // Get puzzle from memory cache
+    const puzzle = getPuzzleById(session.puzzle_id);
+    
+    if (!puzzle) {
+      return res.status(404).json({ error: "Puzzle not found" });
+    }
 
-    const totalMoves = puzzle.moves.split(" ").length;
+    const totalMoves = (puzzle.moves || puzzle.Moves).split(" ").length;
 
     if (session.progress_index < totalMoves) {
       return res.status(400).json({ error: "Puzzle not completed" });

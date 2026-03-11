@@ -6,6 +6,8 @@ import authRoutes from './src/routes/auth.routes.js';
 import userRoutes from './src/routes/user.routes.js';
 import puzzleRoutes from './src/routes/puzzle.routes.js';
 import soloRoutes from './src/routes/solo.routes.js';
+import { loadPuzzles } from './src/services/puzzleLoader.js';
+
 dotenv.config();
 
 const app = express();
@@ -28,6 +30,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/puzzle', puzzleRoutes);
 app.use('/api/solo', soloRoutes);
+
+// Preload puzzles on server startup
+loadPuzzles()
+  .then(() => console.log('✅ Puzzles preloaded successfully'))
+  .catch(err => console.error('⚠️ Failed to preload puzzles:', err.message));
+
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
 });
