@@ -1,5 +1,3 @@
-\
-
 # ♟️ CrypNight.sol
 
 ### Web3 Chess Skill-to-Earn Platform on Solana
