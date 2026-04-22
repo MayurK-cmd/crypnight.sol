@@ -63,7 +63,7 @@ export default function Dashboard() {
 
         <button 
           onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-xl font-bold transition-all mt-auto"
+          className="flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-xl font-bold transition-all mt-auto cursor-pointer"
         >
           <LogOut size={20} /> Logout
         </button>
@@ -104,7 +104,7 @@ export default function Dashboard() {
                 <p className="text-slate-400 mb-8 text-sm max-w-xs leading-relaxed">Solve high-intensity puzzles to earn SOL based on your ELO tier.</p>
                 <button 
                   onClick={() => navigate('/solo')}
-                  className="w-full md:w-auto bg-emerald-400 text-black px-8 py-4 rounded-2xl font-black hover:bg-emerald-300 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+                  className="w-full md:w-auto bg-emerald-400 text-black px-8 py-4 rounded-2xl font-black hover:bg-emerald-300 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Zap size={18} fill="currentColor" /> ENTER SOLO MODE
                 </button>
