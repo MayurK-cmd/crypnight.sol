@@ -1,34 +1,42 @@
-import {supabase} from '../config/supabase.js';
+import { supabase } from '../config/supabase.js';
+import { AuditAction, getClientIp, logAction } from '../utils/auditLog.js';
+
+const isProd = process.env.NODE_ENV === 'production';
+
+const cookieOpts = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: 'strict',
+  maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  path: '/',
+};
+
+// PHASE 1 §4 — Set the httpOnly cookie on every successful signup/login response.
+// The JSON body still returns session.access_token so the live frontend keeps
+// working through the deploy; new frontends should rely on the cookie alone.
+const setAuthCookie = (res, token) => {
+  if (token) res.cookie('auth_token', token, cookieOpts);
+};
 
 export const signup = async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({
-      error: 'Email and password are required',
-    });
-  }
+  // Joi schema already enforced email + password — no need to re-validate here.
 
-  if (password.length < 6) {
-    return res.status(400).json({
-      error: 'Password must be at least 6 characters long',
-    });
-  }
-
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-  });
-
-  console.log("Supabase signup error:", error);
+  const { data, error } = await supabase.auth.signUp({ email, password });
 
   if (error) {
+    await logAction({
+      action: AuditAction.LOGIN_FAILED, // closest existing event for signup errors
+      metadata: { email, reason: 'signup_failed', message: error.message },
+      ipAddress: getClientIp(req),
+    });
     return res.status(400).json({ error: error.message });
   }
 
-  // 🔥 VERY IMPORTANT: create game profile row
+  // Create the game profile row
   const { error: insertError } = await supabase
-    .from("users")
+    .from('users')
     .insert({
       id: data.user.id,
       wallet_address: null,
@@ -36,51 +44,102 @@ export const signup = async (req, res) => {
       rating: 1000,
     });
 
-  console.log("Insert error:", insertError);
-
   if (insertError) {
+    console.error('Insert error:', insertError);
     return res.status(500).json({
-      error: "User created but profile creation failed",
+      error: 'User created but profile creation failed',
     });
   }
 
+  // PHASE 1 §4 — issue the cookie if signup also returned a session
+  if (data.session?.access_token) {
+    setAuthCookie(res, data.session.access_token);
+  }
+
+  await logAction({
+    userId: data.user.id,
+    action: AuditAction.SIGNUP,
+    metadata: { email },
+    ipAddress: getClientIp(req),
+  });
+
   return res.status(201).json({
-    message: "User registered successfully",
+    message: 'User registered successfully',
     user: data.user,
     session: data.session,
   });
 };
 
-
-
 export const login = async (req, res) => {
-    const {email, password} = req.body;
+  const { email, password } = req.body;
 
-    if(!email || !password) {
-        return res.status(400).json({error: 'Email and password are required'});
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    if (error.message.includes('Invalid login credentials')) {
+      await logAction({
+        action: AuditAction.LOGIN_FAILED,
+        metadata: { email, reason: 'invalid_credentials' },
+        ipAddress: getClientIp(req),
+      });
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    if (error.message.includes('Email not confirmed')) {
+      await logAction({
+        action: AuditAction.LOGIN_FAILED,
+        metadata: { email, reason: 'email_not_confirmed' },
+        ipAddress: getClientIp(req),
+      });
+      return res.status(403).json({ error: 'Email not confirmed. Please check your inbox.' });
     }
 
-    const {data, error} = await supabase.auth.signInWithPassword({
-        email,
-        password,
+    await logAction({
+      action: AuditAction.LOGIN_FAILED,
+      metadata: { email, reason: 'other', message: error.message },
+      ipAddress: getClientIp(req),
     });
-    
-    if (error) {
-        if(error.message.includes('Invalid login credentials')) {
-            return res.status(401).json({error: 'Invalid email or password'});
-        }
+    return res.status(400).json({ error: error.message });
+  }
 
-        if(error.message.includes('Email not confirmed')) {
-            return res.status(403).json({error: 'Email not confirmed. Please check your inbox.'});
-        }
+  // PHASE 1 §4 — set the httpOnly cookie
+  if (data.session?.access_token) {
+    setAuthCookie(res, data.session.access_token);
+  }
 
-        return res.status(400).json({error: error.message});
-       
-    }
+  await logAction({
+    userId: data.user.id,
+    action: AuditAction.LOGIN,
+    metadata: { email },
+    ipAddress: getClientIp(req),
+  });
 
-    return res.status(200).json({
-        message: 'User logged in successfully', 
-        user: data.user,
-        session: data.session
-    });
+  return res.status(200).json({
+    message: 'User logged in successfully',
+    user: data.user,
+    session: data.session,
+  });
+};
+
+// PHASE 1 §4.5 — Logout endpoint clears the cookie
+export const logout = async (req, res) => {
+  res.clearCookie('auth_token', { path: '/' });
+
+  // Try to surface a userId for audit when we can. The token is optional here —
+  // logout should always succeed at clearing the cookie.
+  let userId = null;
+  const token = req.cookies?.auth_token
+    || req.headers.authorization?.replace('Bearer ', '');
+  if (token) {
+    const { data } = await supabase.auth.getUser(token);
+    userId = data?.user?.id || null;
+  }
+
+  await logAction({
+    userId,
+    action: AuditAction.LOGOUT,
+    metadata: {},
+    ipAddress: getClientIp(req),
+  });
+
+  return res.status(200).json({ success: true });
 };

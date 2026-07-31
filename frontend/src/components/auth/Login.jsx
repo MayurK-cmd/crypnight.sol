@@ -35,8 +35,9 @@ export default function Login() {
     setIsLoading(true);
     try {
       const res = await API.post('/auth/login', { email, password });
-      const token = res.data.session.access_token;
-      login(token);
+      // PHASE 1 §4 — the httpOnly cookie is set automatically. We just record
+      // the returned user in context and let the router decide where to go.
+      login(res.data.user);
       showToast("Access Granted. Loading your stats...");
       setTimeout(() => navigate('/redirect'), 1000);
     } catch (err) {

@@ -1,5 +1,6 @@
 import express from "express";
-import { verifyUser } from "../middleware/auth.middleware.js";
+import { verifyUser, requireVerified } from "../middleware/auth.middleware.js";
+import { validate, schemas } from "../middleware/validate.js";
 import {
   startRoundSession,
   completePuzzleInRound,
@@ -8,8 +9,14 @@ import {
 
 const router = express.Router();
 
-router.post("/start", verifyUser, startRoundSession);
-router.post("/puzzle-complete", verifyUser, completePuzzleInRound);
-router.get("/summary/:round_session_id", verifyUser, getRoundSummary);
+router.post("/start", verifyUser, requireVerified, startRoundSession);
+router.post(
+  "/puzzle-complete",
+  verifyUser,
+  requireVerified,
+  validate(schemas.roundCompleteSchema),
+  completePuzzleInRound
+);
+router.get("/summary/:round_session_id", verifyUser, requireVerified, getRoundSummary);
 
 export default router;

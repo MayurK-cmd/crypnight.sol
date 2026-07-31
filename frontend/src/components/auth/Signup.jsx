@@ -15,6 +15,27 @@ const Toast = ({ message, type, onClose }) => (
   </div>
 );
 
+// PHASE 1 §5.2 — password strength meter
+const getPasswordStrength = (password) => {
+  let score = 0;
+  if (password.length >= 8) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[a-z]/.test(password)) score++;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+  return score; // 0–5
+};
+
+const strengthLabel = ['', 'Very weak', 'Weak', 'Fair', 'Strong', 'Very strong'];
+const strengthColor = [
+  '',
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#16a34a',
+];
+
 export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,7 +52,12 @@ export default function Signup() {
   const handleSignup = async (e) => {
     e.preventDefault();
     if (!email || !password) return showToast("Please fill in all fields", "error");
-    if (password.length < 6) return showToast("Password must be at least 6 characters", "error");
+    if (getPasswordStrength(password) < 4) {
+      return showToast(
+        "Password must be at least 8 characters and include uppercase, lowercase, number, and special character",
+        "error"
+      );
+    }
 
     setIsLoading(true);
     try {
@@ -94,6 +120,31 @@ export default function Signup() {
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
+
+            {password && (
+              <div className="mt-1">
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div
+                      key={i}
+                      className="h-1 flex-1 rounded"
+                      style={{
+                        background:
+                          i <= getPasswordStrength(password)
+                            ? strengthColor[getPasswordStrength(password)]
+                            : '#e5e7eb',
+                      }}
+                    />
+                  ))}
+                </div>
+                <p
+                  className="text-xs mt-1 font-medium"
+                  style={{ color: strengthColor[getPasswordStrength(password)] }}
+                >
+                  {strengthLabel[getPasswordStrength(password)]}
+                </p>
+              </div>
+            )}
 
             <button 
               type="submit"
