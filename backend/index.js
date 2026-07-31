@@ -9,6 +9,8 @@ import userRoutes from './src/routes/user.routes.js';
 import puzzleRoutes from './src/routes/puzzle.routes.js';
 import soloRoutes from './src/routes/solo.routes.js';
 import roundRoutes from './src/routes/round.routes.js';
+import historyRoutes from './src/routes/history.routes.js';
+import leaderboardRoutes from './src/routes/leaderboard.routes.js';
 import { loadPuzzles } from './src/services/puzzleLoader.js';
 import { apiLimiter, authLimiter } from './src/middleware/rateLimiter.js';
 
@@ -78,6 +80,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/puzzle', puzzleRoutes);
 app.use('/api/solo', soloRoutes);
+app.use('/api/history', historyRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/round', roundRoutes);
 
 // Preload puzzles on server startup

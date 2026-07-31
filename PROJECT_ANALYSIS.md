@@ -1,197 +1,107 @@
 # CrypNight.sol Project Analysis
 
+> Snapshot as of the completion of Phase 1 (security hardening) and Phase 2 (solo-loop completion) in the codebase at `D:\code\web3\crypnight.sol`.
+
 ## What's Built
 
-### Backend Features Implemented:
-1. **Authentication System**
-   - Email/password signup and login via Supabase Auth
-   - JWT-based session validation
-   - Password validation (minimum 6 characters)
-   - Automatic user profile creation on signup
+### Phase 1 — Security Hardening (completed, all 12 endpoint checks green)
 
-2. **Wallet Integration**
-   - Phantom wallet linking with signature verification
-   - Uses tweetnacl and bs58 for cryptographic verification
-   - Prevents wallet spoofing attacks
+The security posture of the backend was the first priority. The following are now live:
 
-3. **Puzzle System**
-   - Loads chess puzzles from Supabase Storage (CSV format)
-   - Memory caching for performance
-   - Tier-based puzzle retrieval (beginner/intermediate/pro/gm)
-   - Puzzle validation against engine solutions
+| Layer | Implementation | File |
+|---|---|---|
+| Rate limiting | `authLimiter` (10 / 15 min on `/api/auth/{login,signup}`), `apiLimiter` (60 / 1 min on `/api`), `walletLimiter` (5 / hour on `/api/user/link-wallet`) | `backend/src/middleware/rateLimiter.js`, mounted in `backend/index.js` and `backend/src/routes/user.routes.js` |
+| Security headers | `helmet()` with explicit CSP + HSTS (1y, includeSubDomains, preload) | `backend/index.js` |
+| CORS hardening | Environment-aware origin check; reads `FRONTEND_URL` from `.env` in prod, falls back to localhost in dev | `backend/index.js`, `backend/.env` |
+| Body size limit | `express.json({ limit: '10kb' })` + `urlencoded` equivalent | `backend/index.js` |
+| Input validation | Joi schemas for signup, login, wallet link, tier, solo move/start/submit/fail, round-puzzle-complete | `backend/src/middleware/validate.js` |
+| httpOnly JWT cookies | httpOnly + secure + sameSite=strict, 24 h maxAge; auth middleware reads cookie first then Bearer header; logout endpoint clears cookie | `backend/src/middleware/auth.middleware.js`, `backend/src/controllers/auth.controller.js`, `backend/src/routes/auth.routes.js`, `frontend/src/api/axios.js` (withCredentials), `frontend/src/context/AuthContext.jsx` |
+| Password policy | Server: 8+ chars + upper + lower + number + special via Joi. UI: 5-segment strength meter in Signup | `backend/src/middleware/validate.js`, `frontend/src/components/auth/Signup.jsx` |
+| Email verification enforcement | New `requireVerified` middleware chained on `user/{link-wallet,set-tier}`, `puzzle`, `solo/*`, `round/*` (intentionally NOT on `/user/profile` so the `/redirect` flow can still see `is_setup_complete`); 403 banner via `crypnight:needs-verification` window event + AuthContext flag | `backend/src/middleware/auth.middleware.js`, all four route files |
+| Audit logging | `audit_logs` table migrated into Supabase; `backend/src/utils/auditLog.js`; `logAction` called from auth, user, and solo controllers on signup / login / login-failed / logout / wallet-linked / wallet-link-failed / tier-selected / puzzle-solved / puzzle-failed | `docs/migrations/audit_logs.sql`, `backend/src/utils/auditLog.js`, controller files |
+| Backend test harness | `scripts/phase1_checklist.mjs` boots no server of its own, hits the existing `index.js` over HTTP, exercises 12 checks, exits with count of failures | `backend/scripts/phase1_checklist.mjs` (12/12 passing) |
 
-4. **Game Modes**
-   - **Solo Mode**: 
-     - Session management with move validation
-     - 3-strike failure system
-     - Timed solve tracking
-     - Solution submission with reward calculation
-   - **Round Mode** (Practice PvP):
-     - Round-based sessions (10 puzzles max)
-     - ELO-based rating adjustments
-     - Result tracking and statistics
+### Phase 2 — Solo Mode Loop Completion (implemented; migration pending in Supabase)
 
-5. **User Management**
-   - Wallet linking to user accounts
-   - Skill tier selection (one-time, locked after selection)
-   - Profile retrieval
-   - Default rating system per tier
+| Capability | Implementation | File |
+|---|---|---|
+| Server-side timer | `MAX_SOLO_SESSION_MS = 10 min`. `submitSoloMove` rejects with `400 'Session timed out'` if age > cap. `submitSoloAttempt` computes `solveTimeMs = now - started_at` and persists it. Frontend never sends time. | `backend/src/utils/rewardCalculator.js`, `backend/src/controllers/solo.controller.js` |
+| Reward persistence | New columns on `solo_sessions`: `solved_at`, `solve_time_ms`, `reward_amount`, `tier`, `status` (active\|solved\|failed). `calculateReward(...)` returns SOL net of 3% platform fee, rounded to 6 decimals. Controller persists reward on solve. | `backend/src/utils/rewardCalculator.js`, `docs/migrations/solo_sessions_rewards.sql` (pending) |
+| Match history API | `GET /api/history?page=1&limit=20`. Returns the caller's `solo_sessions` where status ∈ {solved, failed}, paginated newest-first, including persisted `solve_time_ms` and `reward_amount`. | `backend/src/controllers/history.controller.js`, `backend/src/routes/history.routes.js`, `backend/index.js` |
+| Leaderboard API | `GET /api/leaderboard/global`, `/tier/:tier`, `/my-rank`. Reads from `public.leaderboard` SQL view (defined in migration). | `backend/src/controllers/history.controller.js`, `backend/src/routes/leaderboard.routes.js`, `backend/index.js` |
+| Leaderboard SQL view | `public.leaderboard` aggregates `users` + `solo_sessions` (status='solved') + `solo_attempts`, computes best-streak via window function, filters `puzzles_solved >= 5` to suppress sockpuppets. | `docs/migrations/solo_sessions_rewards.sql` |
+| Stale-session cron | `pg_cron.schedule('expire-stale-solo-sessions', '*/5 * * * *', ...)`. Wrapped in a `do $$ ... exception when undefined_function then null` so it no-ops if pg_cron isn't installed — application-level cap still enforces 10 min. | `docs/migrations/solo_sessions_rewards.sql` |
+| Match history UI | `MatchHistory.jsx` lists recent solves/fails with tier, wrong-move count, exact ms timing (formatted mm:ss), reward in SOL. Pagination controls. | `frontend/src/components/MatchHistory.jsx`, `frontend/src/App.jsx` (`/match-history`), `frontend/src/components/auth/Dashboard.jsx` (sidebar entry) |
+| Leaderboard UI | `Leaderboard.jsx` — tabs (Global / Beginner / Intermediate / Pro / GM). Renders rows with rank, tier, puzzles solved, streak, ELO, total SOL earned. Includes "You" badge calling `/leaderboard/my-rank`. | `frontend/src/components/Leaderboard.jsx`, `frontend/src/App.jsx` (`/leaderboard`), `frontend/src/components/auth/Dashboard.jsx` (sidebar entry) |
 
-6. **Middleware & Utilities**
-   - Authentication verification middleware
-   - CORS configuration
-   - Supabase configuration
-   - Wallet signature verification utility
+### Pre-existing functionality (unchanged but still in use)
 
-### Frontend Features Implemented:
-1. **Authentication Flow**
-   - Login, Signup, Setup, Profile pages
-   - Auth context for state management
-   - Token storage in localStorage
+| Area | What's there | Source |
+|---|---|---|
+| Auth | Supabase email/password signup + login. Auto-creates row in `public.users` on signup with rating 1000. | `backend/src/controllers/auth.controller.js`, `backend/src/routes/auth.routes.js` |
+| Wallet linking | Phantom wallet via Solana wallet adapter; `verifySignature` uses tweetnacl + bs58; one-time binding enforced server-side. | `backend/src/controllers/user.controller.js`, `backend/src/utils/verifySignature.js`, `frontend/src/components/auth/Setup.jsx`, `frontend/src/wallet/WalletProvider.jsx` |
+| Profile | `/api/user/profile` returns the full `public.users` row including `wallet_address`, `tier`, `rating`, `is_setup_complete`, `created_at`. | `backend/src/controllers/user.controller.js`, `frontend/src/components/auth/Profile.jsx` |
+| Tier selection | One-time, locked; writes `tier` + tier-default `rating` + flips `is_setup_complete = true`. Defaults: beginner 1000, intermediate 1400, professional 1700, grandmaster 2100. | `backend/src/controllers/user.controller.js`, `frontend/src/components/auth/Setup.jsx` |
+| Puzzle loader | In-memory CSV cache backed by Supabase Storage (`puzzles` bucket, `lichess_puzzles.csv`). Loaded at server boot via `loadPuzzles()`. Tier → rating-range mapping in `getPuzzleForUser`. | `backend/src/services/puzzleLoader.js`, `backend/src/controllers/puzzle.controller.js`, `docs/PUZZLE_SETUP.md` |
+| Solo mode | Session lifecycle (start / move / submit / fail), 3-strike failure, opponent-reply move injection, server-side timer + reward from Phase 2. | `backend/src/controllers/solo.controller.js`, `frontend/src/components/gameModes/Solo.jsx` |
+| Round mode | 10-puzzle rounds, ELO adjustment (K=20 base, scaled by wrong-move multiplier), worst-case `-10` on 3-strike fail. Uses `round_sessions` + `round_puzzle_results`. Floor rating at 100. | `backend/src/controllers/round.controller.js`, `backend/src/routes/round.routes.js` |
+| Frontend shell | Vite + React 19 + Tailwind 4, react-router 7, lucide-react icons, react-chessboard 5. Routes: `/`, `/login`, `/signup`, `/dashboard`, `/setup`, `/profile`, `/redirect`, `/solo`, `/match-history`, `/leaderboard`. | `frontend/src/App.jsx`, `frontend/src/components/...` |
 
-2. **Wallet Integration**
-   - Solana wallet adapter with Phantom support
-   - Wallet connection and transaction signing
+### Database schema (matches `docs/DB.md`, extended by Phase 2 migration)
 
-3. **Game Interface**
-   - Solo mode chessboard (react-chessboard)
-   - Real-time move validation
-   - Visual feedback (last move, option squares)
-   - Timer for solve tracking
-   - Lives system (3 wrong moves = puzzle fail)
-   - Popup notifications for results
-
-4. **Navigation & UI**
-   - React Router for client-side routing
-   - Responsive design with Tailwind CSS
-   - Dashboard for user stats and navigation
+```
+public.users(id PK→auth.users, wallet_address UNIQUE, tier, rating, is_setup_complete, created_at)
+public.solo_sessions(id, user_id, puzzle_id, progress_index, completed, failed,
+                     started_at, wrong_moves,
+                     [P2] solved_at, solve_time_ms, reward_amount, tier, status)
+public.solo_attempts(id, user_id, puzzle_id, solved, time_taken, created_at)
+public.round_sessions(id, user_id, puzzle_count, is_complete, started_at, completed_at)
+public.round_puzzle_results(id, round_session_id, user_id, puzzle_id, puzzle_rating,
+                            solved, wrong_moves, elo_change, time_taken, created_at)
+public.audit_logs(id, user_id, action, metadata jsonb, ip_address, created_at)   -- P1
+public.leaderboard     (view)                                                      -- P2
+```
 
 ## What Needs to be Built
 
-### Missing Features from Roadmap:
-1. **Duel Mode (PvP)**
-   - Head-to-head competition system
-   - SOL staking mechanism
-   - Smart contract escrow for bets
-   - Automatic payout distribution
-   - Platform fee collection (2% commission)
+### Phase 3 — Duel Mode (PvP)
 
-2. **Smart Contract Integration**
-   - Anchor-based Solana smart contracts
-   - Escrow contracts for duel mode
-   - Reward distribution contracts
-   - Platform treasury management
+The original roadmap's Phase 3. Not started.
 
-3. **Advanced Features**
-   - Global leaderboard system
-   - ELO-based scaling for rankings
-   - Engine accuracy comparison (anti-cheat)
-   - WebSocket implementation for real-time updates
-   - Match history and replay system
+1. **Head-to-head competition system** — both players receive the same puzzle, simultaneous timer, fastest correct wins.
+2. **SOL staking + smart-contract escrow** — Anchor program on Solana devnet; on win, transfer stake minus 2% platform fee to winner; on dispute / timeout, refund.
+3. **Matchmaking queue** — pair users with similar rating in same tier (round-robin with ELO brackets from `users.rating`).
+4. **Real-time move sync** — Socket.io or native `ws` server, fed by the existing `verifyUser` middleware (cookies already work over WS).
+5. **Reward ledger status flips** — once an Anchor on-chain transfer is confirmed, update a `duel_payouts` row from `pending → paid`. The `reward_amount` column on `solo_sessions` is the right home for the eventual Phase 3 SOL move.
 
-4. **Deployment & Infrastructure**
-   - Production deployment configurations (Vercel, Render)
-   - Environment-specific configs
-   - Monitoring and logging setup
-   - Backup and disaster recovery plans
+### Phase 4 — Polish + Operations (lower priority)
 
-### Technical Improvements Needed:
-1. **API Completeness**
-   - Missing endpoints for duel mode
-   - Smart contract interaction endpoints
-   - Leaderboard APIs
-   - Admin/moderator endpoints
+1. **Global leaderboard polish** — Anti-sockpuppet gating is in place (`puzzles_solved >= 5`); still need a UI for rank progress and "near me" views.
+2. **Match replay** — Store FEN walk and replay it deterministically on `/profile/replay/:session_id`.
+3. **Email-verification banner UI** — The backend 403 is wired; the front-end `needsEmailVerification` boolean is exposed in AuthContext but no component currently renders the banner.
+4. **Production logging + monitoring** — Currently we have `console.error` everywhere. Need a real logger (pino, winston) and an APM (Datadog, Sentry).
+5. **WebSocket security** — Rate limit + heartbeat + session token rotation when we add WS in Phase 3.
 
-2. **Frontend Components**
-   - Duel mode game interface
-   - Leaderboard display
-   - Wallet transaction history
-   - Tournament/bracket views
-   - Advanced profile statistics
+## Security Findings (status after Phase 1)
 
-## Security Flaws Identified
+### Fixed
+- ✅ Rate limiting on auth, wallet, and all `/api` traffic.
+- ✅ Helmet + CSP + HSTS headers on every response.
+- ✅ Joi validation on every mutating endpoint.
+- ✅ JWT moved out of `localStorage` into `httpOnly` cookies.
+- ✅ Strong password policy (8+ chars, upper, lower, number, special).
+- ✅ `requireVerified` middleware blocks unverified users on every protected route.
+- ✅ Audit logs for sensitive operations (auth, wallet, tier, puzzles).
+- ✅ CORS bound to a known allowlist per environment.
 
-### Critical Issues:
-1. **Missing Rate Limiting**
-   - No protection against brute force attacks on auth endpoints
-   - No throttling on sensitive operations (wallet linking, etc.)
-   - Package `express-rate-limit` installed but not implemented
-
-2. **Insufficient Input Validation**
-   - Minimal validation beyond basic presence checks
-   - No format validation for wallet addresses, signatures
-   - No length/sanitization on user inputs
-   - Potential for injection attacks (though Supabase ORM provides some protection)
-
-3. **Missing Security Headers**
-   - No implementation of:
-     - Content-Security-Policy (CSP)
-     - X-Frame-Options
-     - X-Content-Type-Options
-     - Strict-Transport-Security (HSTS)
-     - X-XSS-Protection
-     - Referrer-Policy
-
-4. **Weak Password Policy**
-   - Only 6-character minimum length
-   - No complexity requirements (mix of char types)
-   - No password strength estimation
-   - No breach password checking
-
-5. **Token Security Concerns**
-   - JWT stored in localStorage (vulnerable to XSS)
-   - No refresh token rotation mechanism
-   - No explicit token revocation on logout
-   - No short-lived access tokens
-
-6. **CORS Configuration**
-   - Overly permissive in development
-   - Should be restricted to specific domains in production
-   - No dynamic origin validation
-
-7. **Missing Audit Logging**
-   - No logging of sensitive operations:
-     - Wallet linking/unlinking
-     - Tier changes
-     - Large transactions
-     - Failed authentication attempts
-   - Hinders security monitoring and incident response
-
-8. **Email Verification Not Enforced**
-   - Code handles confirmation errors but doesn't block unverified users
-   - Allows platform access without email verification
-
-9. **Client-Side Trust Issues**
-   - While backend validates moves, frontend shows "hint" squares (green dots)
-   - Frontend-controlled timer could be manipulated for faster times
-   - Potential for modified clients to gain unfair advantages
-
-10. **Environment Security**
-    - Need to verify .env files are properly protected
-    - Ensure SUPABASE_SERVICE_ROLE_KEY never exposed to frontend
-    - No secrets scanning or protection mechanisms visible
-
-### Recommendations:
-1. **Immediate Fixes**:
-   - Add rate limiting middleware to all API endpoints
-   - Implement comprehensive input validation (use Joi or similar)
-   - Add security headers via helmet.js or similar middleware
-   - Strengthen password requirements (min 8 chars, complexity)
-   - Implement proper CORS restrictions for production
-
-2. **Short-term Improvements**:
-   - Add audit logging for sensitive operations
-   - Implement email verification enforcement
-   - Add secure token handling (httpOnly cookies or short-lived tokens)
-   - Implement request size limits to prevent DoS
-
-3. **Long-term Security**:
-   - Implement WebSocket security (if added)
-   - Add regular security dependency scanning
-   - Implement WAF or CDN-based protection
-   - Add penetration testing schedule
-   - Implement bug bounty program
+### Still open
+- **`account_recovery` enforcement** — Supabase password reset is on by default; we don't currently restrict it to verified email addresses, but the path here is small.
+- **Audit log retention** — no retention policy set; row count will grow unbounded.
+- **Secrets in source** — `backend/.env` is gitignored but has been committed historically; audit the remote before declaring the env clean.
+- **Replay protection on the wallet-link endpoint** — replaying a `(message, signature)` pair would link the same wallet twice (we mitigate with `wallet already linked` 403, but a fresh address could be replayed until the next nonce system is added).
+- **Production-only rate-limit tuning** — current limits are reasonable defaults; need to monitor false positives before tightening.
+- **Helmet CSP is strict** — `'self'` blocks any third-party widget (e.g. analytics). Add explicit allow-listing only if a real need arises.
 
 ## Conclusion
 
-The CrypNight.sol project has a solid foundation with core authentication, wallet integration, and solo gameplay implemented. However, key features like duel mode, smart contracts, and advanced security measures are missing or incomplete. The security posture needs significant improvement before production deployment, particularly around rate limiting, input validation, and secure token handling.
+The project has moved from a partially-secured MVP to a hardened, mostly-self-documenting solo-mode platform. Phase 1 closed the security gap and added an automated check that catches regressions. Phase 2 closed the reward loop with server-side timing, persisted SOL payouts, and a read-only audit trail (history + leaderboard) for users. The biggest remaining work is **Phase 3 (Duel Mode)** which requires Anchor + WebSockets; both are non-trivial but the foundation underneath them — auth, wallet, tier, audit, leaderboard view — is now production-leaning.

@@ -30,7 +30,8 @@ export default function Dashboard() {
   const navLinks = [
     { name: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard size={20} /> },
     { name: 'Profile', path: '/profile', icon: <User size={20} /> },
-    { name: 'Rankings', path: '/leaderboard', icon: <Trophy size={20} /> },
+    { name: 'History', path: '/match-history', icon: <Trophy size={20} /> },
+    { name: 'Rankings', path: '/leaderboard', icon: <Swords size={20} /> },
     { name: 'Solo', path: '/solo', icon: <Zap size={20} /> },
   ];
 
