@@ -5,7 +5,7 @@ import API from "../../api/axios";
 import { LayoutDashboard, User, LogOut, Trophy, Swords, Zap, Menu, X } from 'lucide-react';
 
 export default function Dashboard() {
-  const { logout } = useContext(AuthContext);
+  const { logout, user } = useContext(AuthContext);
   const navigate = useNavigate();
   const location = useLocation();
   const [rating, setRating] = useState("---");
@@ -51,9 +51,9 @@ export default function Dashboard() {
             <Link
               key={link.path}
               to={link.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${
-                location.pathname === link.path 
-                ? 'bg-emerald-50 text-emerald-600' 
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all cursor-pointer ${
+                location.pathname === link.path
+                ? 'bg-emerald-50 text-emerald-600'
                 : 'text-slate-500 hover:bg-slate-50'
               }`}
             >
@@ -78,7 +78,7 @@ export default function Dashboard() {
           </div>
           <span className="font-extrabold text-lg tracking-tighter italic">crypnight.sol</span>
         </div>
-        <button onClick={handleLogout} className="p-2 text-red-500">
+        <button onClick={handleLogout} className="p-2 text-red-500 cursor-pointer">
           <LogOut size={20} />
         </button>
       </header>
@@ -89,10 +89,13 @@ export default function Dashboard() {
 
         <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 md:mb-12 gap-4">
           <div>
-            <h2 className="text-3xl md:text-4xl font-black tracking-tight italic">Welcome back, Strategist.</h2>
+            <h2 className="text-3xl md:text-4xl font-black tracking-tight italic">
+              Welcome back{user?.username ? `, ` : ', '}
+              <span className="font-mono text-emerald-600">{user?.username || 'Strategist'}</span>.
+            </h2>
             <p className="text-slate-500 mt-1 font-medium text-sm md:text-base">Ready to claim your next SOL reward?</p>
           </div>
-          <button className="w-full md:w-auto bg-black text-white px-8 py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-200">
+          <button className="w-full md:w-auto bg-black text-white px-8 py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-200 cursor-pointer">
             <Swords size={18} /> Find Match
           </button>
         </header>
@@ -130,7 +133,7 @@ export default function Dashboard() {
           <Link
             key={link.path}
             to={link.path}
-            className={`flex flex-col items-center gap-1 ${
+            className={`flex flex-col items-center gap-1 cursor-pointer ${
               location.pathname === link.path ? 'text-emerald-500' : 'text-slate-400'
             }`}
           >

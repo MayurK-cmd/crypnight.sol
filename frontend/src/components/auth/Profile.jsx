@@ -10,7 +10,7 @@ const Toast = ({ message, type, onClose }) => (
     }`}>
       <span className="text-lg">{type === 'error' ? '⚠️' : '✅'}</span>
       <span className="font-bold text-sm tracking-tight">{message}</span>
-      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600">✕</button>
+      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
     </div>
   </div>
 );
@@ -55,7 +55,7 @@ export default function Profile() {
       {toast.show && <Toast message={toast.msg} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />}
 
       <div className="max-w-3xl mx-auto">
-        <Link to="/dashboard" className="inline-flex items-center gap-2 text-slate-500 hover:text-black font-bold mb-10 transition-colors group">
+        <Link to="/dashboard" className="inline-flex items-center gap-2 text-slate-500 hover:text-black font-bold mb-10 transition-colors group cursor-pointer">
           <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
         </Link>
 
@@ -64,6 +64,17 @@ export default function Profile() {
         {profile && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Username Card */}
+              <div className="bg-slate-50 border border-slate-100 p-8 rounded-[2.5rem] flex items-start gap-5 shadow-sm">
+                <div className="p-4 bg-white rounded-2xl text-emerald-600 shadow-sm"><User size={24} /></div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Username</span>
+                  <p className="text-xl font-black text-slate-900 mt-1 font-mono">
+                    {profile.username || <span className="text-slate-400 italic">Not set</span>}
+                  </p>
+                </div>
+              </div>
+
               {/* Wallet Card */}
               <div className="bg-slate-50 border border-slate-100 p-8 rounded-[2.5rem] flex items-start gap-5 shadow-sm">
                 <div className="p-4 bg-white rounded-2xl text-emerald-600 shadow-sm"><Wallet size={24} /></div>
@@ -96,7 +107,7 @@ export default function Profile() {
                     <p className="text-slate-500 font-medium">Joined on {new Date(profile.created_at).toLocaleDateString()}</p>
                   </div>
                </div>
-               <button className="px-8 py-3 border-2 border-slate-200 rounded-xl font-bold hover:bg-slate-100 transition-colors">
+               <button className="px-8 py-3 border-2 border-slate-200 rounded-xl font-bold hover:bg-slate-100 transition-colors cursor-pointer">
                   Refresh Metadata
                </button>
             </div>

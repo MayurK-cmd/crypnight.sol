@@ -2,23 +2,23 @@ const HowItWorks = () => {
   const steps = [
     {
       number: "01",
-      title: "Wallet Authentication",
-      desc: "Connect your Phantom wallet. We use cryptographic signatures to verify ownership—no passwords, no emails.",
-      subtext: "Wallet Address = Unique ID | Initial Rating: 1000",
-      icon: "🔐"
+      title: "Sign Up",
+      desc: "Create an account with email + password and pick a unique username. Verify your email to unlock Solo mode.",
+      subtext: "Username = Your handle | Initial Rating: 1000",
+      icon: "📧"
     },
     {
       number: "02",
-      title: "Select Your Arena",
-      desc: "Choose between Solo Speed (Skill-to-Earn) or Duel Mode (High-Stakes PvP).",
-      subtext: "Global ELO matching ensures fair competition.",
-      icon: "⚔️"
+      title: "Link Wallet & Tier",
+      desc: "Connect Phantom to claim rewards. Choose your starting tier — Beginner, Intermediate, Pro, or Grandmaster.",
+      subtext: "Tier is locked after selection. Wallet binds once.",
+      icon: "🔐"
     },
     {
       number: "03",
-      title: "Instant Settlement",
-      desc: "Once a puzzle is solved, the Solana smart contract validates the move and pushes rewards to your wallet.",
-      subtext: "98% payout | 2% Platform fee for the ecosystem.",
+      title: "Solve & Earn",
+      desc: "Run a 10-puzzle Puzzle Rush. Each solve pays SOL based on tier, speed, and accuracy. Wrong moves cost you a puzzle, three fails ends the run.",
+      subtext: "97% payout | 3% platform fee.",
       icon: "💎"
     }
   ];
@@ -28,9 +28,9 @@ const HowItWorks = () => {
       <div className="max-w-7xl mx-auto px-6">
         <div className="mb-16">
           <h2 className="text-4xl font-bold tracking-tight">How it works</h2>
-          <p className="text-slate-500 mt-4">Transparent. Secure. Skill-driven.</p>
+          <p className="text-slate-500 mt-4">Sign up, set your tier, start earning.</p>
         </div>
-        
+
         <div className="grid md:grid-cols-3 gap-12 relative">
           {steps.map((step, idx) => (
             <div key={idx} className="group relative">

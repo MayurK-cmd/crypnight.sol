@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { TIER_NAMES_ALL } from '../utils/tiers.js';
 
 // Reusable validator middleware factory (PHASE 1 §3.2)
 export const validate = (schema) => (req, res, next) => {
@@ -15,6 +16,19 @@ export const validate = (schema) => (req, res, next) => {
 // PHASE 1 §3.2 — Auth schemas
 export const signupSchema = Joi.object({
   email: Joi.string().email().max(254).required(),
+  // PHASE 6 §A — unique username. Lowercased + normalized server-side;
+  // 3–20 chars, lowercase a-z + digits + underscore only.
+  username: Joi.string()
+    .min(3)
+    .max(20)
+    .pattern(/^[a-z0-9_]+$/, 'lowercase letters, digits, underscore')
+    .lowercase()
+    .required()
+    .messages({
+      'string.pattern.name': 'Username must contain only {#name}',
+      'string.min': 'Username must be at least 3 characters',
+      'string.max': 'Username must be at most 20 characters',
+    }),
   password: Joi.string()
     .min(8)
     .max(128)
@@ -48,7 +62,7 @@ export const walletLinkSchema = Joi.object({
 // that the existing setTier controller maps to the same buckets.
 export const tierSchema = Joi.object({
   tier: Joi.string()
-    .valid('beginner', 'intermediate', 'pro', 'professional', 'gm', 'grandmaster')
+    .valid(...TIER_NAMES_ALL)
     .required(),
 });
 
@@ -64,9 +78,11 @@ export const soloMoveSchema = Joi.object({
     .messages({ 'string.pattern.base': 'Invalid move format. Use UCI notation (e.g. e2e4)' }),
 });
 
-// Solo start — accepts puzzle_id
+// Solo start — PHASE 5: puzzle_id is optional. The backend now picks
+// the next puzzle via the adaptive rating band on /puzzle, and the
+// start endpoint just creates (or resumes) the session row.
 export const soloStartSchema = Joi.object({
-  puzzle_id: Joi.string().required(),
+  puzzle_id: Joi.string().optional(),
 });
 
 // Solo finalize
@@ -74,8 +90,15 @@ export const soloSubmitSchema = Joi.object({
   session_id: Joi.string().required(),
 });
 
-// Solo fail
+// Solo fail — back-compat shim for older clients. New flow handles
+// 3-strike detection inline in /solo/move.
 export const soloFailSchema = Joi.object({
+  session_id: Joi.string().required(),
+});
+
+// PHASE 5 — explicit session-end endpoint. The frontend uses auto-end
+// only; this route exists for tests and the cron path.
+export const soloEndSchema = Joi.object({
   session_id: Joi.string().required(),
 });
 
@@ -98,5 +121,6 @@ export const schemas = {
   soloStartSchema,
   soloSubmitSchema,
   soloFailSchema,
+  soloEndSchema,
   roundCompleteSchema,
 };

@@ -6,6 +6,7 @@ import {
   submitSoloMove,
   submitSoloAttempt,
   failSoloSession,
+  endSoloSessionHandler,
 } from "../controllers/solo.controller.js";
 
 const router = express.Router();
@@ -38,6 +39,15 @@ router.post(
   requireVerified,
   validate(schemas.soloFailSchema),
   failSoloSession
+);
+// PHASE 5 — explicit session-end endpoint. Used by tests + cron path.
+// Frontend uses auto-end only; this is for explicit lifecycle control.
+router.post(
+  "/end",
+  verifyUser,
+  requireVerified,
+  validate(schemas.soloEndSchema),
+  endSoloSessionHandler
 );
 
 export default router;

@@ -11,7 +11,7 @@ const Toast = ({ message, type, onClose }) => (
     }`}>
       <span className="text-lg">{type === 'error' ? '⚠️' : '✅'}</span>
       <span className="font-bold text-sm tracking-tight">{message}</span>
-      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600">✕</button>
+      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
     </div>
   </div>
 );
@@ -41,7 +41,10 @@ export default function Login() {
       showToast("Access Granted. Loading your stats...");
       setTimeout(() => navigate('/redirect'), 1000);
     } catch (err) {
-      showToast(err.response?.data?.error || 'Invalid credentials', 'error');
+      const data = err.response?.data;
+      const details = Array.isArray(data?.details) ? data.details : null;
+      const msg = details ? `${data.error}: ${details.join(', ')}` : (data?.error || 'Invalid credentials');
+      showToast(msg, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -91,16 +94,16 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-[42px] text-slate-400 hover:text-slate-600 transition-colors"
+                className="absolute right-4 top-[42px] text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
 
-            <button 
+            <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-4 bg-emerald-400 text-black rounded-2xl font-bold text-lg hover:bg-emerald-300 disabled:opacity-70 transition-all flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 mt-2"
+              className="w-full py-4 bg-emerald-400 text-black rounded-2xl font-bold text-lg hover:bg-emerald-300 disabled:opacity-70 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 mt-2 cursor-pointer"
             >
               {isLoading ? <Loader2 className="animate-spin" size={20} /> : "Enter App"}
             </button>
@@ -108,7 +111,7 @@ export default function Login() {
         </form>
 
         <p className="text-center mt-8 text-slate-500 font-medium text-sm">
-          New to the club? <Link to="/signup" className="text-emerald-600 hover:text-emerald-500 font-bold underline underline-offset-4">Create an account</Link>
+          New to the club? <Link to="/signup" className="text-emerald-600 hover:text-emerald-500 font-bold underline underline-offset-4 cursor-pointer">Create an account</Link>
         </p>
       </div>
     </div>

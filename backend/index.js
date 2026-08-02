@@ -19,6 +19,10 @@ dotenv.config();
 
 const app = express();
 
+// Trust the first proxy hop (Vercel/Render) so req.ip is the real client IP,
+// not the proxy. Rate-limit buckets depend on this being distinct per visitor.
+app.set('trust proxy', 1);
+
 // PHASE 1 §2 — Security headers (helmet)
 app.use(helmet({
   contentSecurityPolicy: {

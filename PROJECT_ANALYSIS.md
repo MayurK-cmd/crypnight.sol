@@ -34,6 +34,26 @@ The security posture of the backend was the first priority. The following are no
 | Match history UI | `MatchHistory.jsx` lists recent solves/fails with tier, wrong-move count, exact ms timing (formatted mm:ss), reward in SOL. Pagination controls. | `frontend/src/components/MatchHistory.jsx`, `frontend/src/App.jsx` (`/match-history`), `frontend/src/components/auth/Dashboard.jsx` (sidebar entry) |
 | Leaderboard UI | `Leaderboard.jsx` — tabs (Global / Beginner / Intermediate / Pro / GM). Renders rows with rank, tier, puzzles solved, streak, ELO, total SOL earned. Includes "You" badge calling `/leaderboard/my-rank`. | `frontend/src/components/Leaderboard.jsx`, `frontend/src/App.jsx` (`/leaderboard`), `frontend/src/components/auth/Dashboard.jsx` (sidebar entry) |
 
+### Phase 5 — Puzzle-Rush Solo Mode (implemented; migration pending in Supabase)
+
+| Capability | Implementation | File |
+|---|---|---|
+| **Solution strip** | `getPuzzleForUser` destructures `moves` / `Moves` / `solution` / `Solution` out of the puzzle object so the SAN solution never reaches the client. Network tab no longer leaks. | `backend/src/controllers/puzzle.controller.js` |
+| **Adaptive rating band** | `getRatingBand(userRating, lastAttempt)` returns `[min, max]` centered on `max(userRating, lastSolvedRating)`, with a –25 failed-bias, clamped to `[100, 2500]`, ±200 wide. Falls back to the tier band if the picker returns zero matches. | `backend/src/controllers/puzzle.controller.js`, `backend/src/utils/tiers.js` |
+| **Multi-puzzle session** | One `solo_sessions` row per 10-puzzle run. New columns: `puzzles_in_session`, `puzzles_solved`, `puzzles_failed`, `total_session_reward`, `ended_at`, `session_rating_delta`, `current_puzzle_id`, `current_puzzle_solve_started_at`, `current_puzzle_wrong_moves`, `last_solved_rating`, `last_puzzle_elo_delta`. | `docs/migrations/phase5_multi_puzzle_sessions.sql` |
+| **Resume-or-create** | `startSoloSession` and `/puzzle` both look for an active in-flight session (`status='active', ended_at is null, puzzles_in_session < 10, not stale`) and return the existing row with `resumed: true` instead of creating a new one. | `backend/src/controllers/solo.controller.js`, `backend/src/controllers/puzzle.controller.js` |
+| **3-strike → puzzle fail, session continues** | `submitSoloMove` detects 3rd wrong move inline. Marks the puzzle failed, increments `puzzles_failed` and `puzzles_in_session`, clears the current-puzzle slot. Returns `{puzzle_failed: true, session_continues: true}`. The session keeps going. | `backend/src/controllers/solo.controller.js` |
+| **Auto-end at 10** | `submitSoloAttempt` and the 3-strike path both check `puzzles_in_session >= 10` and call `endSoloSession` automatically. Frontend never has to wire an End button. | `backend/src/controllers/solo.controller.js` |
+| **Per-puzzle ELO** | `puzzleEloDelta({ userRating, puzzleRating, solveTimeMs, wrongMoves, failed })` in `rewardCalculator.js`. Failed → -5. Solved → `round(32 * (perf - 0.5))` where `perf = 0.4*difficultyFit + 0.4*speedFit + 0.2*accuracyFit` and each `*Fit` clamps to [0,1]. Range ±16. | `backend/src/utils/rewardCalculator.js` |
+| **Per-session rating update** | `endSoloSession` sums `last_puzzle_elo_delta` into `session_rating_delta`, updates `users.rating` (floor 100), sets `ended_at`, `status='solved'`, `completed=true`, `reward_amount=total_session_reward`. Logs `AuditAction.PUZZLE_SOLVED` with `reason: 'session_end:<reason>'`. | `backend/src/controllers/solo.controller.js` |
+| **Mirror reward_amount for leaderboard** | `submitSoloAttempt` writes `total_session_reward` AND `reward_amount` on every per-puzzle solve. The Phase 2 `public.leaderboard` view continues to sum `reward_amount` correctly without a view rewrite. | `backend/src/controllers/solo.controller.js` |
+| **Stale-session cron (v2)** | `phase5-end-stale-solo-sessions` pg_cron job, runs every 5 min, sets `status='failed', ended_at=now()` on active sessions older than 10 min. Idempotent with the Phase 2 cron. Graceful when pg_cron unavailable. | `docs/migrations/phase5_multi_puzzle_sessions.sql` |
+| **Central tier module** | `backend/src/utils/tiers.js` exports `TIER_NAMES`, `TIER_ALIASES`, `normalizeTier`, `isValidTier`, `TIER_RATING_BANDS`, `TIER_BASE_REWARD`, `TIER_DEFAULT_RATINGS`, `TIER_NAMES_ALL`. Replaces the 6 duplications across `puzzle.controller.js`, `solo.controller.js`, `history.controller.js`, `validate.js`, `rewardCalculator.js`, `user.controller.js`. | `backend/src/utils/tiers.js` |
+| **Match history UI** | `MatchHistory.jsx` now renders session-level stats: `puzzles_solved`, `puzzles_failed`, `total_session_reward`, `session_rating_delta`. Back-compat: Phase 2 rows (where the new columns are null) fall back to the per-puzzle fields. | `frontend/src/components/MatchHistory.jsx` |
+| **Solo mode UI** | New "Session Stats" sidebar panel (Puzzle N/10, Solved/Failed counters, session earnings). Final summary screen replaces the chessboard on `session_complete: true` with `Total earned`, `New rating (+delta)`, and a `Start a New Run` button. 3-wrong-move path shows a popup for 2.5s then auto-fetches the next puzzle. | `frontend/src/components/gameModes/Solo.jsx` |
+| **Test harness** | `backend/scripts/phase5_checklist.mjs` — 14 checks covering solution-strip, resume, 3-strike, full solve, auto-end, history projection. Reads `source/lichess_puzzles.csv` locally so it's self-contained. | `backend/scripts/phase5_checklist.mjs` |
+| **Spec doc** | `docs/PHASE5.md` — full plan + verification + risks. | `docs/PHASE5.md` |
+
 ### Pre-existing functionality (unchanged but still in use)
 
 | Area | What's there | Source |
@@ -47,13 +67,18 @@ The security posture of the backend was the first priority. The following are no
 | Round mode | 10-puzzle rounds, ELO adjustment (K=20 base, scaled by wrong-move multiplier), worst-case `-10` on 3-strike fail. Uses `round_sessions` + `round_puzzle_results`. Floor rating at 100. | `backend/src/controllers/round.controller.js`, `backend/src/routes/round.routes.js` |
 | Frontend shell | Vite + React 19 + Tailwind 4, react-router 7, lucide-react icons, react-chessboard 5. Routes: `/`, `/login`, `/signup`, `/dashboard`, `/setup`, `/profile`, `/redirect`, `/solo`, `/match-history`, `/leaderboard`. | `frontend/src/App.jsx`, `frontend/src/components/...` |
 
-### Database schema (matches `docs/DB.md`, extended by Phase 2 migration)
+### Database schema (matches `docs/DB.md`, extended by Phase 2 + Phase 5 migrations)
 
 ```
 public.users(id PK→auth.users, wallet_address UNIQUE, tier, rating, is_setup_complete, created_at)
 public.solo_sessions(id, user_id, puzzle_id, progress_index, completed, failed,
                      started_at, wrong_moves,
-                     [P2] solved_at, solve_time_ms, reward_amount, tier, status)
+                     [P2] solved_at, solve_time_ms, reward_amount, tier, status,
+                     [P5] puzzles_in_session, puzzles_solved, puzzles_failed,
+                          total_session_reward, ended_at, session_rating_delta,
+                          current_puzzle_id, current_puzzle_solve_started_at,
+                          current_puzzle_wrong_moves, last_solved_rating,
+                          last_puzzle_elo_delta)
 public.solo_attempts(id, user_id, puzzle_id, solved, time_taken, created_at)
 public.round_sessions(id, user_id, puzzle_count, is_complete, started_at, completed_at)
 public.round_puzzle_results(id, round_session_id, user_id, puzzle_id, puzzle_rating,
@@ -104,4 +129,4 @@ The original roadmap's Phase 3. Not started.
 
 ## Conclusion
 
-The project has moved from a partially-secured MVP to a hardened, mostly-self-documenting solo-mode platform. Phase 1 closed the security gap and added an automated check that catches regressions. Phase 2 closed the reward loop with server-side timing, persisted SOL payouts, and a read-only audit trail (history + leaderboard) for users. The biggest remaining work is **Phase 3 (Duel Mode)** which requires Anchor + WebSockets; both are non-trivial but the foundation underneath them — auth, wallet, tier, audit, leaderboard view — is now production-leaning.
+The project has moved from a partially-secured MVP to a hardened, mostly-self-documenting platform. Phase 1 closed the security gap and added an automated check that catches regressions. Phase 2 closed the reward loop with server-side timing, persisted SOL payouts, and a read-only audit trail (history + leaderboard) for users. **Phase 5** transformed Solo mode into a Puzzle-Rush-style 10-puzzle run with anti-cheat (solution stripped from `/puzzle`), adaptive ELO (per-puzzle contribution summed at session end), and an automated test harness. Tier constants are now centralized in `backend/src/utils/tiers.js` to prevent drift across the 6 call sites. The biggest remaining work is **Phase 3 (Duel Mode)** which requires Anchor + WebSockets; both are non-trivial but the foundation underneath them — auth, wallet, tier, audit, leaderboard view, multi-puzzle sessions, per-puzzle ELO — is now production-leaning.

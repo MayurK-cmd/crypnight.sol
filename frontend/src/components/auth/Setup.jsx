@@ -12,7 +12,7 @@ const Toast = ({ message, type, onClose }) => (
     }`}>
       <span className="text-lg">{type === 'error' ? '⚠️' : '✅'}</span>
       <span className="font-bold text-sm tracking-tight">{message}</span>
-      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600">✕</button>
+      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
     </div>
   </div>
 );
@@ -81,9 +81,9 @@ export default function Setup() {
             </div>
 
             {publicKey && (
-              <button 
+              <button
                 onClick={linkWallet}
-                className="text-xs font-black uppercase tracking-tighter text-emerald-600 hover:text-emerald-700 underline underline-offset-4 transition-all"
+                className="text-xs font-black uppercase tracking-tighter text-emerald-600 hover:text-emerald-700 underline underline-offset-4 transition-all cursor-pointer"
               >
                 Sign Verification Message
               </button>
@@ -95,10 +95,10 @@ export default function Setup() {
             <h3 className="text-xl font-bold mb-2">Skill Level</h3>
             <p className="text-sm text-slate-500 mb-8 leading-relaxed font-medium">Your initial ELO tier (cannot be changed later).</p>
 
-            <select 
+            <select
               disabled={!publicKey}
               onChange={(e) => setTier(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-4 text-slate-900 focus:outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500 mb-6 appearance-none cursor-pointer font-bold"
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-4 text-slate-900 focus:outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500 mb-6 appearance-none cursor-pointer font-bold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">Select Level</option>
               <option value="beginner">Beginner (1000 ELO)</option>
@@ -107,10 +107,10 @@ export default function Setup() {
               <option value="grandmaster">Grandmaster (2500 ELO)</option>
             </select>
 
-            <button 
+            <button
               disabled={!publicKey || !tier}
               onClick={setUserTier}
-              className="w-full py-4 bg-emerald-400 text-black rounded-2xl font-bold text-lg hover:bg-emerald-300 disabled:opacity-30 transition-all shadow-xl shadow-emerald-500/20"
+              className="w-full py-4 bg-emerald-400 text-black rounded-2xl font-bold text-lg hover:bg-emerald-300 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-xl shadow-emerald-500/20 cursor-pointer"
             >
               Enter Dashboard
             </button>

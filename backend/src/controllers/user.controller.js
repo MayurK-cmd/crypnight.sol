@@ -1,6 +1,7 @@
 import { supabase } from "../config/supabase.js";
 import { verifySignature } from "../utils/verifySignature.js";
 import { AuditAction, getClientIp, logAction } from "../utils/auditLog.js";
+import { isValidTier, normalizeTier, TIER_DEFAULT_RATINGS } from "../utils/tiers.js";
 
 export const linkWallet = async (req, res) => {
   try {
@@ -69,20 +70,16 @@ export const linkWallet = async (req, res) => {
 
 const allowedTiers = ['beginner', 'intermediate', 'professional', 'grandmaster'];
 
-const defaultRatings = {
-  beginner: 1000,
-  intermediate: 1400,
-  professional: 1700,
-  grandmaster: 2100,
-};
-
 export const setTier = async (req, res) => {
   const { tier } = req.body;
   const userId = req.user.id;
 
-  if (!allowedTiers.includes(tier)) {
+  if (!isValidTier(tier)) {
     return res.status(400).json({ error: 'Invalid tier' });
   }
+
+  // Normalize so users.tier always stores the canonical short form.
+  const canonical = normalizeTier(tier);
 
   const { data: existingUser } = await supabase
     .from('users')
@@ -99,8 +96,8 @@ export const setTier = async (req, res) => {
   await supabase
     .from('users')
     .update({
-      tier,
-      rating: defaultRatings[tier],
+      tier: canonical,
+      rating: TIER_DEFAULT_RATINGS[canonical],
       is_setup_complete: true,
     })
     .eq('id', userId);
@@ -108,7 +105,7 @@ export const setTier = async (req, res) => {
   await logAction({
     userId,
     action: AuditAction.TIER_SELECTED,
-    metadata: { tier },
+    metadata: { tier: canonical },
     ipAddress: getClientIp(req),
   });
 

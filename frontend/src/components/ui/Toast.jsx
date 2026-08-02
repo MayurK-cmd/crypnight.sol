@@ -9,7 +9,7 @@ export const Toast = ({ message, type, onClose }) => {
       }`}>
         {type === 'error' ? '⚠️' : '✅'}
         <span className="font-bold text-sm tracking-tight">{message}</span>
-        <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600">✕</button>
+        <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
       </div>
     </div>
   );

@@ -21,7 +21,7 @@ const GameModes = () => {
               <li className="flex items-center gap-2">✅ No staking required</li>
               <li className="flex items-center gap-2">✅ Instant reward claim</li>
             </ul>
-            <button className="w-full py-4 bg-slate-100 rounded-2xl font-bold group-hover:bg-emerald-400 group-hover:text-black transition-all">
+            <button className="w-full py-4 bg-slate-100 rounded-2xl font-bold group-hover:bg-emerald-400 group-hover:text-black transition-all cursor-pointer">
               Enter Practice
             </button>
           </div>
@@ -43,7 +43,7 @@ const GameModes = () => {
                 </div>
               ))}
             </div>
-            <button className="w-full py-4 bg-emerald-400 text-black rounded-2xl font-bold hover:scale-[1.02] transition-transform relative z-10">
+            <button className="w-full py-4 bg-emerald-400 text-black rounded-2xl font-bold hover:scale-[1.02] transition-transform relative z-10 cursor-pointer">
               Find Match
             </button>
           </div>

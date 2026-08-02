@@ -19,9 +19,10 @@ const setAuthCookie = (res, token) => {
 };
 
 export const signup = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, username } = req.body;
 
-  // Joi schema already enforced email + password — no need to re-validate here.
+  // Joi schema already enforced email + password + username — no need
+  // to re-validate here. username is already lowercased server-side.
 
   const { data, error } = await supabase.auth.signUp({ email, password });
 
@@ -34,6 +35,19 @@ export const signup = async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
 
+  // PHASE 6 §A — pre-flight username uniqueness check. The DB has a
+  // unique partial index on lower(username), but a friendly 409 here
+  // reads better than surfacing a Postgres 23505. Skip when the auth
+  // signup itself failed (no user to attach a username to).
+  const { data: existing } = await supabase
+    .from('users')
+    .select('id')
+    .ilike('username', username)
+    .maybeSingle();
+  if (existing) {
+    return res.status(409).json({ error: 'Username already taken' });
+  }
+
   // Create the game profile row
   const { error: insertError } = await supabase
     .from('users')
@@ -42,6 +56,7 @@ export const signup = async (req, res) => {
       wallet_address: null,
       tier: null,
       rating: 1000,
+      username,
     });
 
   if (insertError) {
@@ -59,7 +74,14 @@ export const signup = async (req, res) => {
   await logAction({
     userId: data.user.id,
     action: AuditAction.SIGNUP,
-    metadata: { email },
+    metadata: { email, username },
+    ipAddress: getClientIp(req),
+  });
+
+  await logAction({
+    userId: data.user.id,
+    action: AuditAction.USERNAME_SET,
+    metadata: { username, initial: true },
     ipAddress: getClientIp(req),
   });
 

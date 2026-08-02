@@ -86,11 +86,23 @@ Tier is locked after selection.
 
 # 🏆 Ranking System
 
-* Tier-based rating system
-* Performance tracking
-* Match history
-* Global leaderboard (planned)
-* ELO-based scaling (planned)
+* Tier-based rating system with adaptive per-puzzle ELO (Phase 5)
+* Match history — one card per 10-puzzle run
+* Global + per-tier leaderboard, top players surface on the landing page
+* `puzzles_solved >= 5` filter suppresses sockpuppet accounts from the board
+* Username is the public identity on the leaderboard (Phase 6)
+
+---
+
+# 👤 Usernames
+
+Every account gets a unique handle at signup.
+
+* 3–20 characters, lowercase a-z, digits, underscore
+* Case-insensitive uniqueness (`chessKing` and `chessking` collide)
+* Lowercased server-side; rendered lowercase everywhere
+* Surfaced on `/profile`, the dashboard greeting, the in-app leaderboard,
+  and the landing-page top-5
 
 ---
 
@@ -102,7 +114,9 @@ CrypNight.sol uses multi-layer protection:
 * Signature verification
 * Solve time anomaly detection
 * Puzzle hash locking
-* Engine accuracy comparison (planned)
+* **The SAN solution is never sent to the browser** (Phase 5) — the
+  client receives only `puzzle_id` + `fen` + `rating` + `themes`, the
+  moves stay on the server
 
 ---
 
@@ -173,18 +187,38 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 Run backend:
 
 ```bash
-node src/server.js
+node index.js
 ```
+
+> The actual entry is `backend/index.js`. `src/server.js` does not exist.
 
 ---
 
-## 3️⃣ Frontend Setup (Bun)
+## 3️⃣ Frontend Setup
 
 ```bash
 cd frontend
-bun install
-bun run dev
+npm install
+npm run dev
 ```
+
+(Bun also works — the project doesn't depend on Bun-specific features,
+so vanilla `npm` is the lowest-friction path.)
+
+---
+
+# 📚 Docs
+
+| Doc | Purpose |
+|---|---|
+| [`docs/PHASE1.md`](docs/PHASE1.md) | Security hardening (rate limiting, JWT cookies, helmet, audit logs) |
+| [`docs/PHASE2.md`](docs/PHASE2.md) | Solo reward loop + history + leaderboard view |
+| [`docs/PHASE5.md`](docs/PHASE5.md) | Puzzle-Rush solo mode (10 puzzles, strict mode, anti-cheat, adaptive ELO) |
+| [`docs/PHASE6.md`](docs/PHASE6.md) | Polish pass — usernames, real leaderboard on landing, CSS audit |
+| [`docs/PUZZLE_SETUP.md`](docs/PUZZLE_SETUP.md) | Operator guide: Supabase Storage bucket + CSV format |
+| [`docs/DB.md`](docs/DB.md) | Schema reference (context only — not a migration script) |
+| [`docs/migrations/`](docs/migrations/) | Ordered `.sql` files; apply in sequence in the Supabase SQL editor |
+| [`PROJECT_ANALYSIS.md`](PROJECT_ANALYSIS.md) | Snapshot of what's built, organized by phase |
 
 ---
 

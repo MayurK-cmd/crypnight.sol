@@ -9,6 +9,7 @@ export const AuditAction = {
   WALLET_LINKED: 'wallet.linked',
   WALLET_LINK_FAILED: 'wallet.link_failed',
   TIER_SELECTED: 'user.tier_selected',
+  USERNAME_SET: 'user.username_set',
   PUZZLE_SOLVED: 'game.puzzle_solved',
   PUZZLE_FAILED: 'game.puzzle_failed',
 };

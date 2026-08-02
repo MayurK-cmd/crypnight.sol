@@ -1,11 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import HowItWorks from './HowItWorks';
 import GameModes from './GameModes';
+import API from '../api/axios';
+import { Loader2, Trophy } from 'lucide-react';
+
+const formatWalletShort = (addr) => {
+  if (!addr) return null;
+  if (addr.length <= 10) return addr;
+  return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
+};
 
 const LandingPage = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [rows, setRows] = useState(null); // null = loading, [] = loaded-empty
+  const [myRank, setMyRank] = useState(null); // null = loading/unauth, undefined = 404
   const navigate = useNavigate();
+
+  // PHASE 6 §B — pull the real top-5 from /leaderboard/global on mount.
+  // Best-effort: any failure just leaves the empty state in place.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const { data } = await API.get('/leaderboard/global?limit=5');
+        if (!cancelled) setRows(data.leaderboard || []);
+      } catch {
+        if (!cancelled) setRows([]);
+      }
+
+      try {
+        const { data } = await API.get('/leaderboard/my-rank');
+        if (!cancelled) setMyRank(data ?? null);
+      } catch (err) {
+        if (!cancelled) setMyRank(undefined); // logged-out or unranked
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, []);
 
   // Smooth scroll helper for internal links
   const scrollToSection = (e, id) => {
@@ -13,7 +46,7 @@ const LandingPage = () => {
     const element = document.getElementById(id);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
-      setIsMenuOpen(false); 
+      setIsMenuOpen(false);
     }
   };
 
@@ -33,9 +66,9 @@ const LandingPage = () => {
 
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
-            <a href="#how-it-works" onClick={(e) => scrollToSection(e, 'how-it-works')} className="hover:text-black transition-colors">How it Works</a>
-            <a href="#modes" onClick={(e) => scrollToSection(e, 'modes')} className="hover:text-black transition-colors">Game Modes</a>
-            <a href="#leaderboard" onClick={(e) => scrollToSection(e, 'leaderboard')} className="hover:text-black transition-colors">Leaderboard</a>
+            <a href="#how-it-works" onClick={(e) => scrollToSection(e, 'how-it-works')} className="hover:text-black transition-colors cursor-pointer">How it Works</a>
+            <a href="#modes" onClick={(e) => scrollToSection(e, 'modes')} className="hover:text-black transition-colors cursor-pointer">Game Modes</a>
+            <a href="#leaderboard" onClick={(e) => scrollToSection(e, 'leaderboard')} className="hover:text-black transition-colors cursor-pointer">Leaderboard</a>
             
             {/* Added Login and Signup Redirects */}
             <div className="flex items-center gap-4 ml-4">
@@ -55,7 +88,7 @@ const LandingPage = () => {
           </div>
 
           {/* Mobile Menu Toggle */}
-          <button className="md:hidden" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+          <button className="md:hidden cursor-pointer" onClick={() => setIsMenuOpen(!isMenuOpen)}>
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={isMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16m-7 6h7"} />
             </svg>
@@ -65,12 +98,12 @@ const LandingPage = () => {
         {/* Mobile Nav Menu */}
         {isMenuOpen && (
           <div className="md:hidden bg-white border-b border-slate-100 p-6 flex flex-col gap-4">
-            <a href="#how-it-works" onClick={(e) => scrollToSection(e, 'how-it-works')} className="text-lg font-medium">How it Works</a>
-            <a href="#modes" onClick={(e) => scrollToSection(e, 'modes')} className="text-lg font-medium">Game Modes</a>
-            <a href="#leaderboard" onClick={(e) => scrollToSection(e, 'leaderboard')} className="text-lg font-medium">Leaderboard</a>
+            <a href="#how-it-works" onClick={(e) => scrollToSection(e, 'how-it-works')} className="text-lg font-medium cursor-pointer">How it Works</a>
+            <a href="#modes" onClick={(e) => scrollToSection(e, 'modes')} className="text-lg font-medium cursor-pointer">Game Modes</a>
+            <a href="#leaderboard" onClick={(e) => scrollToSection(e, 'leaderboard')} className="text-lg font-medium cursor-pointer">Leaderboard</a>
             <hr className="border-slate-100" />
-            <button onClick={() => navigate('/login')} className="text-lg font-bold text-left">Login</button>
-            <button onClick={() => navigate('/signup')} className="w-full bg-black text-white py-3 rounded-xl font-bold text-center">Sign Up</button>
+            <button onClick={() => navigate('/login')} className="text-lg font-bold text-left cursor-pointer">Login</button>
+            <button onClick={() => navigate('/signup')} className="w-full bg-black text-white py-3 rounded-xl font-bold text-center cursor-pointer">Sign Up</button>
           </div>
         )}
       </nav>
@@ -95,15 +128,15 @@ const LandingPage = () => {
             The world's first decentralized chess puzzle arena. Compete in high-speed duels, solve complex patterns, and get paid for your intelligence.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button 
+            <button
               onClick={() => navigate('/signup')}
-              className="px-8 py-4 bg-black text-white rounded-2xl font-bold text-lg hover:shadow-2xl hover:shadow-emerald-200 transition-all transform hover:-translate-y-1"
+              className="px-8 py-4 bg-black text-white rounded-2xl font-bold text-lg hover:shadow-2xl hover:shadow-emerald-200 transition-all transform hover:-translate-y-1 cursor-pointer"
             >
               Get Started
             </button>
-            <button 
+            <button
               onClick={(e) => scrollToSection(e, 'how-it-works')}
-              className="px-8 py-4 bg-white border border-slate-200 text-slate-900 rounded-2xl font-bold text-lg hover:bg-slate-50 transition-all"
+              className="px-8 py-4 bg-white border border-slate-200 text-slate-900 rounded-2xl font-bold text-lg hover:bg-slate-50 transition-all cursor-pointer"
             >
               Learn More
             </button>
@@ -128,36 +161,121 @@ const LandingPage = () => {
                <h2 className="text-4xl font-black tracking-tight italic">Top Strategists</h2>
                <p className="text-slate-500 mt-2 font-medium">The highest ELO performers this season.</p>
              </div>
-             <button className="mt-4 md:mt-0 px-6 py-2 border border-slate-200 rounded-full text-sm font-bold hover:bg-slate-50 transition-colors">
+             <button
+               onClick={() => navigate('/leaderboard')}
+               className="mt-4 md:mt-0 px-6 py-2 border border-slate-200 rounded-full text-sm font-bold hover:bg-slate-50 transition-colors cursor-pointer"
+             >
                View Full Rankings
              </button>
            </div>
-           
+
            <div className="bg-slate-50 rounded-[2.5rem] p-8 md:p-12 overflow-x-auto shadow-sm">
-             <table className="w-full text-left">
-               <thead>
-                 <tr className="text-slate-400 text-xs uppercase tracking-widest border-b border-slate-200">
-                   <th className="pb-4 font-black">Rank</th>
-                   <th className="pb-4 font-black">Player</th>
-                   <th className="pb-4 font-black">ELO</th>
-                   <th className="pb-4 font-black">Win Rate</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                 {[1, 2, 3, 4, 5].map((i) => (
-                   <tr key={i} className="group">
-                     <td className="py-6 font-mono text-sm text-slate-400">#0{i}</td>
-                     <td className="py-6 flex items-center gap-3">
-                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 shadow-inner"></div>
-                       <span className="font-bold">Grandmaster_{i}.sol</span>
-                     </td>
-                     <td className="py-6 font-mono font-black text-emerald-600">2840</td>
-                     <td className="py-6 text-slate-500 font-bold">78%</td>
+             {rows === null && (
+               <div className="flex items-center justify-center py-12 gap-3 text-slate-400 font-bold">
+                 <Loader2 className="animate-spin" size={20} />
+                 Loading leaderboard…
+               </div>
+             )}
+
+             {rows !== null && rows.length === 0 && (
+               <div className="text-center py-12 text-slate-400 font-bold">
+                 No ranked players yet — solve 5 puzzles to land on the board.
+               </div>
+             )}
+
+             {rows !== null && rows.length > 0 && (
+               <table className="w-full text-left">
+                 <thead>
+                   <tr className="text-slate-400 text-xs uppercase tracking-widest border-b border-slate-200">
+                     <th className="pb-4 font-black">Rank</th>
+                     <th className="pb-4 font-black">Player</th>
+                     <th className="pb-4 font-black">ELO</th>
+                     <th className="pb-4 font-black">Solved</th>
+                     <th className="pb-4 font-black">Earned</th>
                    </tr>
-                 ))}
-               </tbody>
-             </table>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100">
+                   {rows.map((entry, i) => {
+                     const display = entry.username || formatWalletShort(entry.wallet_address) || `Player ${entry.global_rank}`;
+                     const medalColor =
+                       i === 0 ? 'text-yellow-500' :
+                       i === 1 ? 'text-slate-500' :
+                       i === 2 ? 'text-amber-700' : 'text-slate-300';
+                     return (
+                       <tr key={entry.user_id} className="group hover:bg-white transition-colors">
+                         <td className="py-6 font-mono text-sm">
+                           <span className={`font-black ${medalColor}`}>
+                             #{String(entry.global_rank ?? i + 1).padStart(2, '0')}
+                           </span>
+                         </td>
+                         <td className="py-6">
+                           <div className="flex items-center gap-3">
+                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-200 to-emerald-400 shadow-inner flex items-center justify-center text-emerald-900 font-black text-sm">
+                               {display.slice(0, 2).toUpperCase()}
+                             </div>
+                             <div>
+                               <p className="font-bold font-mono">{display}</p>
+                               {entry.tier && (
+                                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                   {entry.tier}
+                                 </p>
+                               )}
+                             </div>
+                           </div>
+                         </td>
+                         <td className="py-6 font-mono font-black text-emerald-600">{entry.rating}</td>
+                         <td className="py-6 text-slate-500 font-bold">{entry.puzzles_solved}</td>
+                         <td className="py-6 text-slate-500 font-bold">
+                           {Number(entry.total_earned ?? 0).toFixed(3)} SOL
+                         </td>
+                       </tr>
+                     );
+                   })}
+                 </tbody>
+               </table>
+             )}
            </div>
+
+           {/* PHASE 6 §B — Your Rank footer row. */}
+           {myRank && (
+             <div className="mt-6 p-6 rounded-2xl bg-emerald-50 border border-emerald-100 flex flex-col md:flex-row items-center justify-between gap-4">
+               <div className="flex items-center gap-4">
+                 <div className="w-12 h-12 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                   <Trophy size={20} />
+                 </div>
+                 <div>
+                   <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600 mb-1">Your Rank</p>
+                   <p className="text-xl font-black text-slate-900">
+                     #{myRank.global_rank ?? myRank.tier_rank ?? '—'}{' '}
+                     <span className="text-slate-400 text-base font-mono">·</span>{' '}
+                     <span className="font-mono">{myRank.username || 'you'}</span>{' '}
+                     <span className="text-slate-400 text-base font-mono">·</span>{' '}
+                     <span className="font-mono text-emerald-700">{myRank.rating} ELO</span>
+                   </p>
+                 </div>
+               </div>
+               <button
+                 onClick={() => navigate('/leaderboard')}
+                 className="px-6 py-2 bg-emerald-500 text-white rounded-full text-sm font-bold hover:bg-emerald-600 transition-colors cursor-pointer"
+               >
+                 See Full Board
+               </button>
+             </div>
+           )}
+
+           {myRank === undefined && (
+             <div className="mt-6 p-6 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
+               <p className="text-sm text-slate-500 font-medium">
+                 Sign up and start solving to land on the board.
+               </p>
+               <button
+                 onClick={() => navigate('/signup')}
+                 className="px-6 py-2 bg-black text-white rounded-full text-sm font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+               >
+                 Create Account →
+               </button>
+             </div>
+           )}
         </div>
       </section>
 
@@ -169,9 +287,9 @@ const LandingPage = () => {
             <p className="text-slate-400 text-lg mb-10 max-w-lg mx-auto font-medium">
               Join the future of competitive chess. Create your account and start earning today.
             </p>
-            <button 
+            <button
               onClick={() => navigate('/signup')}
-              className="px-10 py-4 bg-emerald-400 text-black rounded-2xl font-black text-xl hover:bg-emerald-300 transition-all shadow-xl shadow-emerald-500/20"
+              className="px-10 py-4 bg-emerald-400 text-black rounded-2xl font-black text-xl hover:bg-emerald-300 transition-all shadow-xl shadow-emerald-500/20 cursor-pointer"
             >
               Sign Up Now
             </button>
@@ -182,9 +300,9 @@ const LandingPage = () => {
 
       <footer className="py-12 border-t border-slate-100 text-center bg-white">
         <div className="flex justify-center gap-8 mb-6 font-bold text-sm">
-            <a href="#" className="text-slate-400 hover:text-black transition-colors">Twitter</a>
-            <a href="#" className="text-slate-400 hover:text-black transition-colors">Discord</a>
-            <a href="#" className="text-slate-400 hover:text-black transition-colors">Docs</a>
+            <a href="#" className="text-slate-400 hover:text-black transition-colors cursor-pointer">Twitter</a>
+            <a href="#" className="text-slate-400 hover:text-black transition-colors cursor-pointer">Discord</a>
+            <a href="#" className="text-slate-400 hover:text-black transition-colors cursor-pointer">Docs</a>
         </div>
         <p className="text-slate-400 text-xs font-bold uppercase tracking-widest italic">© 2026 Crypnight.sol — Built on Solana</p>
       </footer>

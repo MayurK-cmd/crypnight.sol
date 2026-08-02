@@ -53,7 +53,7 @@ export default function Leaderboard() {
       <div className="max-w-3xl mx-auto">
         <button
           onClick={() => navigate('/dashboard')}
-          className="inline-flex items-center gap-2 text-slate-500 hover:text-black font-bold mb-10 transition-colors group"
+          className="inline-flex items-center gap-2 text-slate-500 hover:text-black font-bold mb-10 transition-colors group cursor-pointer"
         >
           <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
           Back to Dashboard
@@ -72,7 +72,7 @@ export default function Leaderboard() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className={
-                'flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-colors ' +
+                'flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-colors cursor-pointer ' +
                 (tab === t.id
                   ? 'bg-white text-emerald-600 shadow-sm'
                   : 'text-slate-400 hover:text-slate-700')
@@ -89,6 +89,7 @@ export default function Leaderboard() {
               You
             </span>
             #{tab === 'global' ? myRank.global_rank : myRank.tier_rank ?? '—'} ·{' '}
+            <span className="font-mono">{myRank.username || 'you'}</span> ·{' '}
             {myRank.rating} ELO
           </div>
         )}
@@ -126,11 +127,11 @@ export default function Leaderboard() {
                 #{i + 1}
               </span>
               <div className="flex-1">
-                <p className="text-sm font-black italic text-slate-700">
-                  {entry.tier || 'untiered'}
+                <p className="text-sm font-black italic text-slate-700 font-mono">
+                  {entry.username || entry.wallet_short || 'anonymous'}
                 </p>
                 <p className="text-xs text-slate-400">
-                  {entry.puzzles_solved} solved · streak {entry.best_streak}
+                  {entry.tier ? `${entry.tier} · ` : ''}{entry.puzzles_solved} solved · streak {entry.best_streak}
                 </p>
               </div>
               <div className="text-right">
