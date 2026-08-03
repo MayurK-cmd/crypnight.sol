@@ -102,7 +102,23 @@ with `username` in Phase 6).
 
 ---
 
-## 🛡 Security
+## 💰 Solana Payouts (Phase 3)
+
+After a 10-puzzle session completes, the platform treasury (a PDA on Solana devnet)
+pays the player directly in SOL minus a 3% platform fee.
+
+- **Program ID**: `F1E8QvpUYJP71zWz4NwYpPtpUszfp8wb2nKjnrzF2Cmh` (devnet)
+- **Treasury PDA**: Holds platform SOL; backend authority can call `pay_reward`
+- **ER Routing**: Backend uses `ConnectionMagicRouter` to route `pay_reward` txs to MagicBlock ER endpoint (~10ms confirms) instead of base layer (~400ms)
+- **Payout formula**: Scales with tier, puzzle difficulty, solve time, and wrong moves. Example: Pro tier, 1800 rating, 20s, 0 wrong = ~0.028 SOL gross, player receives ~0.027 SOL (3% fee to platform)
+- **On-chain tracking**: `reward_ledger(tx_signature, on_chain_payout)` + audit logs with `PAYOUT_COMPLETED` / `PAYOUT_FAILED` events
+- **Frontend**: Summary screen displays Solana Explorer link with tx signature
+
+**How ER routing works** (see `docs/ER_BACKEND_ROUTING.md`):
+- Contract is simple Anchor (no SDK macros, avoids dependency conflicts)
+- Backend creates `ConnectionMagicRouter` pointing to ER endpoint
+- When `pay_reward` tx targets the treasury PDA, router auto-routes to ER (~10ms)
+- ER validator syncs state back to base layer asynchronously for finality
 
 | Layer | Where |
 |---|---|
@@ -115,10 +131,11 @@ with `username` in Phase 6).
 | CORS bound to env-configured origin | `backend/index.js` |
 | Trust-proxy set so rate-limiter IP keying works behind Vercel/Render | `backend/index.js` |
 | Solution stripped from `/puzzle` response | `puzzle.controller.js` |
+| Platform authority keypair never sent to frontend | `backend/src/config/solana.js`, `backend/src/services/payoutService.js` |
 
 `audit_logs` records SIGNUP, LOGIN, LOGIN_FAILED, LOGOUT, WALLET_LINKED,
 WALLET_LINK_FAILED, TIER_SELECTED, USERNAME_SET, PUZZLE_SOLVED,
-PUZZLE_FAILED.
+PUZZLE_FAILED, PAYOUT_COMPLETED, PAYOUT_FAILED.
 
 ---
 
@@ -233,17 +250,20 @@ HTTP. Exit code = number of failed checks.
 
 ## 🚧 Not built yet
 
-- **Phase 3 — Duel Mode (PvP)**: head-to-head simultaneous-puzzle
+- **Phase 4 — Duel Mode (PvP)**: head-to-head simultaneous-puzzle
   duels, SOL staking with Anchor escrow, WebSocket move sync,
   matchmaking by ELO. Requires real money + smart contract audits —
   out of scope for solo playtesting.
-- **Phase 4 — Operations polish**: production logger (pino/winston),
+- **Phase 5 — Operations polish**: production logger (pino/winston),
   Sentry/Datadog APM, match replay from stored FEN walks.
 - **Username mutability**: no `PATCH /api/user/profile` yet. Add a
   `username_set_at` column + lock-after-N-days policy before exposing.
 - **Wallet-prefix leaderboard fallback**: Phase 6 uses username only.
   A future improvement is to fall back to a short wallet prefix
   (`7xKXt…kQ3p`) for legacy users without a username.
+- **MagicBlock ER delegation** (Phase 3 enhancement): treasury currently
+  pays on base layer (~400ms). When `ephemeral-rollups-sdk` is compatible
+  with anchor-lang 1.0.2, add ER delegation for ~10ms confirms.
 
 ---
 

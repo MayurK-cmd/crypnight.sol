@@ -44,6 +44,7 @@ export default function Solo() {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [sessionEndReason, setSessionEndReason] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [txSignature, setTxSignature] = useState(null);
 
   const currentTurn =
     position && position.split(" ")[1] === "w" ? "White" : "Black";
@@ -296,6 +297,7 @@ export default function Solo() {
       puzzles_failed: data.puzzles_failed,
       total_session_reward: data.total_session_reward,
     });
+    setTxSignature(data.txSignature || null);
   };
 
   const startNewRun = async () => {
@@ -309,6 +311,7 @@ export default function Solo() {
     setPuzzlesFailed(0);
     setPuzzlesInSession(0);
     setTotalReward(0);
+    setTxSignature(null);
     await fetchPuzzle();
   };
 
@@ -391,6 +394,23 @@ export default function Solo() {
                   </p>
                 </div>
               </div>
+
+              {txSignature && (
+                <a
+                  href={`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-xs text-emerald-400 hover:text-emerald-300 cursor-pointer mb-6 underline underline-offset-2 transition-colors"
+                >
+                  View payout on Solana Explorer ↗
+                </a>
+              )}
+
+              {!txSignature && summary.total_session_reward > 0 && (
+                <p className="text-xs text-yellow-500 mb-6">
+                  Reward recorded — on-chain payout processing
+                </p>
+              )}
 
               <button
                 onClick={startNewRun}

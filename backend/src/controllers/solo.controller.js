@@ -7,6 +7,7 @@ import {
   MAX_SOLO_SESSION_MS,
 } from '../utils/rewardCalculator.js';
 import { isValidTier, normalizeTier, TIER_RATING_BANDS } from '../utils/tiers.js';
+import { payReward } from '../services/payoutService.js';
 
 const PUZZLES_PER_SESSION = 10;
 const RATING_FLOOR = 100;
@@ -54,9 +55,6 @@ const sessionAgeMs = (session) =>
   Date.now() - new Date(session.started_at).getTime();
 const isStale = (session) => sessionAgeMs(session) > MAX_SOLO_SESSION_MS;
 
-// PHASE 5 — end a 10-puzzle run. Sums the per-puzzle ELO contributions,
-// updates users.rating, and closes the session row. Returns the summary
-// payload the frontend uses to render the final screen.
 export const endSoloSession = async ({ userId, sessionId, reason, ipAddress = null }) => {
   const { data: session, error: sessionError } = await supabase
     .from('solo_sessions')
@@ -78,6 +76,7 @@ export const endSoloSession = async ({ userId, sessionId, reason, ipAddress = nu
       puzzles_solved: session.puzzles_solved || 0,
       puzzles_failed: session.puzzles_failed || 0,
       total_session_reward: session.total_session_reward || 0,
+      txSignature: null,
     };
   }
 
@@ -120,6 +119,50 @@ export const endSoloSession = async ({ userId, sessionId, reason, ipAddress = nu
     ipAddress,
   });
 
+  let txSignature = null;
+  let onChainPayout = null;
+
+  if (totalReward > 0) {
+    try {
+      const { data: user } = await supabase
+        .from('users')
+        .select('wallet_address')
+        .eq('id', userId)
+        .single();
+
+      if (user?.wallet_address) {
+        const result = await payReward(user.wallet_address, totalReward);
+        txSignature = result.signature;
+        onChainPayout = result.playerPayout;
+
+        await logAction({
+          userId,
+          action: 'game.payout_completed',
+          metadata: {
+            session_id: sessionId,
+            rewardSol: totalReward,
+            txSignature,
+            onChainPayout,
+          },
+          ipAddress,
+        });
+      }
+    } catch (err) {
+      console.error('[payoutService] Payout failed:', err.message);
+
+      await logAction({
+        userId,
+        action: 'game.payout_failed',
+        metadata: {
+          session_id: sessionId,
+          rewardSol: totalReward,
+          error: err.message,
+        },
+        ipAddress,
+      });
+    }
+  }
+
   return {
     session_continues: false,
     session_complete: true,
@@ -128,6 +171,8 @@ export const endSoloSession = async ({ userId, sessionId, reason, ipAddress = nu
     puzzles_solved: session.puzzles_solved || 0,
     puzzles_failed: session.puzzles_failed || 0,
     total_session_reward: totalReward,
+    txSignature,
+    onChainPayout,
   };
 };
 

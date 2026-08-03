@@ -11,6 +11,7 @@ import soloRoutes from './src/routes/solo.routes.js';
 import roundRoutes from './src/routes/round.routes.js';
 import historyRoutes from './src/routes/history.routes.js';
 import leaderboardRoutes from './src/routes/leaderboard.routes.js';
+import adminRoutes from './src/routes/admin.routes.js';
 import { loadPuzzles } from './src/services/puzzleLoader.js';
 import { apiLimiter, authLimiter } from './src/middleware/rateLimiter.js';
 
@@ -87,6 +88,7 @@ app.use('/api/solo', soloRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/round', roundRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Preload puzzles on server startup
 loadPuzzles()
