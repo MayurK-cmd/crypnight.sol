@@ -125,18 +125,31 @@ export const getPuzzleForUser = async (req, res) => {
     // STRICT MODE — also bump puzzles_in_session to at least 1 here for
     // sessions that were created with the migration default of 0 (e.g.
     // an existing row from before Phase 5).
+    //
+    // Also extract and store player_color from the puzzle FEN so server-side
+    // move validation knows which color the player controls.
     const pickedPuzzleId =
       puzzle.puzzle_id || puzzle.PuzzleId || puzzle.id;
+    const pickedFen = puzzle.fen || puzzle.FEN;
+    const pickedPlayerColorChar = pickedFen.split(' ')[1];
+
     if (sessionRow && sessionRow.current_puzzle_id !== pickedPuzzleId) {
       const inSession = sessionRow.puzzles_in_session || 0;
+      const moveCount = (puzzle.moves || puzzle.Moves || '').split(' ').filter(m => m).length;
+      const isEvenMoveCount = moveCount % 2 === 0;
+      const initialProgressIndex = isEvenMoveCount ? 1 : 0;
+
+      const fenTurnChar = pickedFen.split(' ')[1];
+      const pickedPlayerColorChar = isEvenMoveCount ? (fenTurnChar === 'w' ? 'b' : 'w') : fenTurnChar;
+
       await supabase
         .from("solo_sessions")
         .update({
           current_puzzle_id: pickedPuzzleId,
           current_puzzle_solve_started_at: new Date().toISOString(),
           current_puzzle_wrong_moves: 0,
-          progress_index: 0,
-          puzzles_in_session: inSession < 1 ? 1 : inSession,
+          progress_index: initialProgressIndex,
+          player_color: pickedPlayerColorChar,
         })
         .eq("id", sessionRow.id);
       sessionRow.current_puzzle_id = pickedPuzzleId;
@@ -153,6 +166,31 @@ export const getPuzzleForUser = async (req, res) => {
       ...safePuzzle
     } = puzzle;
 
+    // Get correct moves and determine if we need to auto-play the first move
+    const correctMoves = (puzzle.moves || puzzle.Moves || '').split(' ').filter(m => m);
+    const moveCount = correctMoves.length;
+    const isEvenMoveCount = moveCount % 2 === 0;
+    let autoPlayedMove = null;
+
+    // For even-move puzzles, auto-play the first move (opponent's opening move)
+    // so the player sees the board after the opponent's move, ready to play move index 1
+    if (isEvenMoveCount && moveCount > 0) {
+      const { Chess } = await import('chess.js');
+      const game = new Chess(puzzle.fen || puzzle.FEN);
+      autoPlayedMove = correctMoves[0];
+      game.move(autoPlayedMove, { sloppy: true });
+      safePuzzle.fen = game.fen();
+      safePuzzle.FEN = game.fen();
+    }
+
+    // DEBUG: Log correct moves to console for testing
+    console.log(`\n🎯 PUZZLE LOADED - ID: ${pickedPuzzleId}`);
+    console.log(`   Rating: ${puzzle.rating || puzzle.Rating}`);
+    console.log(`   Correct moves (in order): ${correctMoves.join(' → ')}`);
+    console.log(`   Move count: ${moveCount} (${isEvenMoveCount ? 'even' : 'odd'})`);
+    if (autoPlayedMove) console.log(`   Auto-played move: ${autoPlayedMove}`);
+    console.log(`   Next move to make: ${isEvenMoveCount ? correctMoves[1] : correctMoves[0]}\n`);
+
     return res.json({
       puzzle: safePuzzle,
       session_id: sessionRow?.id ?? null,
@@ -160,6 +198,7 @@ export const getPuzzleForUser = async (req, res) => {
       puzzles_in_session: sessionRow?.puzzles_in_session ?? 0,
       puzzles_solved: sessionRow?.puzzles_solved ?? 0,
       puzzles_failed: sessionRow?.puzzles_failed ?? 0,
+      auto_played_move: autoPlayedMove,
     });
   } catch (err) {
     console.error("Puzzle fetch error:", err);

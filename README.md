@@ -127,7 +127,72 @@ Platform earns:
 * **2% commission** on Duel Mode pools
 * **3% commission** on Solo Mode rewards
 
-All payouts handled via Solana smart contracts.
+All payouts handled via Solana smart contracts on Magic Block ER.
+
+---
+
+# 💸 On-Chain Payout System
+
+## Architecture
+
+Payouts are executed on **Magic Block ER** (Ephemeral Rollups) — an isolated shard network for CrypNight.
+
+### 3 Accounts Involved
+
+| Account | Role | Details |
+|---------|------|---------|
+| **Authority** | Fee payer & signer | Authorizes and pays transaction fees. Stored in `PLATFORM_AUTHORITY_PRIVATE_KEY` env var |
+| **Treasury PDA** | Reward pool | PDA (Program Derived Address) holding SOL for all payouts. Derived from seed `platform_treasury` |
+| **Player Wallet** | Recipient | Player's Phantom wallet address; receives SOL after solving a puzzle |
+
+### Flow
+
+1. Player solves a puzzle in Solo mode
+2. Backend calculates reward (based on difficulty, tier, solve time)
+3. Backend calls `payReward(playerWallet, rewardSOL)`
+4. Authority signs the transaction
+5. Instruction sent to Magic Block ER (via `erConnection`)
+6. Program: debits Treasury PDA, credits Player wallet
+7. 3% platform fee retained, remainder transferred to player
+8. Transaction confirmed on ER shard (~1-2s with `commitment: 'confirmed'`)
+
+### Magic Block ER Role
+
+Magic Block ER is a **separate execution shard** from regular Solana devnet. The treasury account and program state live exclusively on the ER shard. This provides:
+
+- **Isolated state** — CrypNight's game state doesn't compete with mainnet traffic
+- **Optimized for gaming** — low-latency, gameplay-specific execution
+- **Reduced fees** — ephemeral rollups have lower transaction costs than mainnet
+
+### Transaction Speed
+
+~1-2 seconds to confirmation (with `commitment: 'confirmed'`). This is typical for ER shards, which prioritize finality and state isolation over sub-100ms latency.
+
+### Setup
+
+Treasury must be initialized with the correct authority:
+
+```bash
+cd crypnight-contracts
+node scripts/fund-treasury.js  # Fund existing treasury
+```
+
+Backend requires `.env`:
+
+```
+SOLANA_PROGRAM_ID=DKoawaEk5pJj1npwNYXeCCPF3Uqzxahokq67NY387qbK
+PLATFORM_TREASURY_PUBKEY=omyRQ6Ynne5seohfqiMQRPyaMuSkPDi9gksUeKm4oi6
+PLATFORM_AUTHORITY_PRIVATE_KEY=<base58-encoded-secret-key>
+MAGICBLOCK_ROUTER_URL=https://devnet-router.magicblock.app
+MAGICBLOCK_WS_URL=wss://devnet-router.magicblock.app
+```
+
+Test payouts with:
+
+```bash
+cd backend
+node test-payout-cjs.js
+```
 
 ---
 
@@ -153,8 +218,9 @@ All payouts handled via Solana smart contracts.
 ## 🔗 Blockchain
 
 * Solana (Devnet → Mainnet)
-* Anchor Framework (planned)
-* Escrow-based smart contracts (planned)
+* Anchor Framework
+* Magic Block ER (Ephemeral Rollups) for payouts
+* Smart contracts: payout instruction + treasury PDA
 
 ---
 

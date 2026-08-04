@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("F1E8QvpUYJP71zWz4NwYpPtpUszfp8wb2nKjnrzF2Cmh");
+declare_id!("DKoawaEk5pJj1npwNYXeCCPF3Uqzxahokq67NY387qbK");
 
 pub const PLATFORM_TREASURY_SEED: &[u8] = b"platform_treasury";
 pub const PLATFORM_FEE_BPS: u64 = 300;

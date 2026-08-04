@@ -9,7 +9,7 @@ import {
 import { isValidTier, normalizeTier, TIER_RATING_BANDS } from '../utils/tiers.js';
 import { payReward } from '../services/payoutService.js';
 
-const PUZZLES_PER_SESSION = 10;
+const PUZZLES_PER_SESSION = parseInt(process.env.PUZZLES_PER_SESSION || '10', 10);
 const RATING_FLOOR = 100;
 const SESSION_FAIL_CAP = 3; // 3 puzzle-fails in a run ends the session.
 
@@ -39,7 +39,7 @@ const fetchActiveSession = async (userId) => {
       + 'puzzles_in_session, puzzles_solved, puzzles_failed, '
       + 'total_session_reward, last_puzzle_elo_delta, '
       + 'current_puzzle_id, current_puzzle_solve_started_at, current_puzzle_wrong_moves, '
-      + 'progress_index, wrong_moves, puzzle_id, tier'
+      + 'progress_index, wrong_moves, puzzle_id, tier, player_color'
     )
     .eq('user_id', userId)
     .eq('status', 'active')
@@ -123,44 +123,52 @@ export const endSoloSession = async ({ userId, sessionId, reason, ipAddress = nu
   let onChainPayout = null;
 
   if (totalReward > 0) {
-    try {
-      const { data: user } = await supabase
-        .from('users')
-        .select('wallet_address')
-        .eq('id', userId)
-        .single();
+    // Non-blocking payout: fire and forget, handle errors gracefully
+    const payoutPromise = (async () => {
+      try {
+        const { data: user } = await supabase
+          .from('users')
+          .select('wallet_address')
+          .eq('id', userId)
+          .single();
 
-      if (user?.wallet_address) {
-        const result = await payReward(user.wallet_address, totalReward);
-        txSignature = result.signature;
-        onChainPayout = result.playerPayout;
+        if (user?.wallet_address) {
+          const result = await payReward(user.wallet_address, totalReward);
+          txSignature = result.signature;
+          onChainPayout = result.playerPayout;
+
+          await logAction({
+            userId,
+            action: 'game.payout_completed',
+            metadata: {
+              session_id: sessionId,
+              rewardSol: totalReward,
+              txSignature,
+              onChainPayout,
+            },
+            ipAddress,
+          });
+        }
+      } catch (err) {
+        console.error('[payoutService] Payout failed:', err.message);
 
         await logAction({
           userId,
-          action: 'game.payout_completed',
+          action: 'game.payout_failed',
           metadata: {
             session_id: sessionId,
             rewardSol: totalReward,
-            txSignature,
-            onChainPayout,
+            error: err.message,
           },
           ipAddress,
         });
       }
-    } catch (err) {
-      console.error('[payoutService] Payout failed:', err.message);
+    })();
 
-      await logAction({
-        userId,
-        action: 'game.payout_failed',
-        metadata: {
-          session_id: sessionId,
-          rewardSol: totalReward,
-          error: err.message,
-        },
-        ipAddress,
-      });
-    }
+    // Don't await, don't crash if it fails
+    payoutPromise.catch(err => {
+      console.error('[payoutService] Unhandled payout error:', err);
+    });
   }
 
   return {
@@ -218,32 +226,25 @@ export const startSoloSession = async (req, res) => {
         .eq('id', existing.id);
     }
 
-    // Pick a starting puzzle so the session has a current_puzzle_id
-    // right away (the frontend's /puzzle call also sets it; this
-    // covers clients that call /solo/start without calling /puzzle).
-    const userRating = await fetchUserRating(userId);
-    const tierKey = normalizeTier(tier) || 'intermediate';
-    const [min, max] = TIER_RATING_BANDS[tierKey] || TIER_RATING_BANDS.intermediate;
-    const startPuzzle = getPuzzleByRating(min, max);
-    const startPuzzleId = startPuzzle.puzzle_id || startPuzzle.PuzzleId || startPuzzle.id;
-
+    // Create empty session — puzzle will be selected by /puzzle endpoint
+    // This ensures all puzzles go through the same auto-play logic in puzzle.controller.js
     const { data, error } = await supabase
       .from('solo_sessions')
       .insert({
         user_id: userId,
-        puzzle_id: startPuzzleId, // legacy column
         tier,
         status: 'active',
-        puzzles_in_session: 1,
+        puzzles_in_session: 0,
         puzzles_solved: 0,
         puzzles_failed: 0,
         total_session_reward: 0,
         last_puzzle_elo_delta: 0,
-        current_puzzle_id: startPuzzleId,
-        current_puzzle_solve_started_at: new Date().toISOString(),
+        current_puzzle_id: null,
+        current_puzzle_solve_started_at: null,
         current_puzzle_wrong_moves: 0,
         progress_index: 0,
         wrong_moves: 0,
+        player_color: null,
       })
       .select()
       .single();
@@ -257,11 +258,11 @@ export const startSoloSession = async (req, res) => {
       started_at: data.started_at,
       tier,
       resumed: false,
-      puzzles_in_session: 1,
+      puzzles_in_session: 0,
       puzzles_solved: 0,
       puzzles_failed: 0,
       total_session_reward: 0,
-      current_puzzle_id: startPuzzleId,
+      current_puzzle_id: null,
     });
   } catch (err) {
     console.error('Start session error:', err);
@@ -299,7 +300,7 @@ const recordPuzzleFail = async (req, session, wrongMoves) => {
     current_puzzle_id: null,
     current_puzzle_solve_started_at: null,
     current_puzzle_wrong_moves: 0,
-    progress_index: 0,
+    progress_index: 1,
     wrong_moves: 0,
   };
 
@@ -379,33 +380,70 @@ export const submitSoloMove = async (req, res) => {
       return res.status(404).json({ error: 'Puzzle missing from cache' });
     }
 
-    const correctMoves = (puzzle.moves || puzzle.Moves).split(' ');
-    // progress_index is the index of the next expected user move.
+    const { Chess } = await import('chess.js');
+    const correctMoves = (puzzle.moves || puzzle.Moves).split(' ').filter(m => m);
     const expectedIdx = session.progress_index || 0;
 
-    if (move !== correctMoves[expectedIdx]) {
-      // STRICT MODE: a single wrong move ends the puzzle. The session
-      // either continues to the next puzzle or ends (3-fail cap / 10
-      // solved) — recordPuzzleFail decides.
+    // Replay all moves up to the current position
+    const game = new Chess(puzzle.fen || puzzle.FEN);
+    for (let i = 0; i < expectedIdx; i++) {
+      game.move(correctMoves[i], { sloppy: true });
+    }
+
+    const moveFrom = move.slice(0, 2);
+    const piece = game.get(moveFrom);
+
+    if (!piece) {
+      console.log(`\n❌ INVALID MOVE - Puzzle ${session.current_puzzle_id}`);
+      console.log(`   Attempted move: ${move}`);
+      console.log(`   Error: No piece at square ${moveFrom}\n`);
       const wrongMoves = (session.current_puzzle_wrong_moves || 0) + 1;
       const result = await recordPuzzleFail(req, session, wrongMoves);
       return res.json(result);
     }
 
-    // Correct move — advance progress.
-    const nextIdx = expectedIdx + 1;
-    const updates = { progress_index: nextIdx };
-    if (nextIdx >= correctMoves.length) {
-      // Puzzle fully solved — leave the slot open so /submit can run.
-      updates.current_puzzle_wrong_moves = 0;
+    const playerColorChar = session.player_color || 'w'; // default to white for legacy sessions
+    const pieceColorChar = piece.color;
+
+    if (pieceColorChar !== playerColorChar) {
+      console.log(`\n❌ CHEATING ATTEMPT - Puzzle ${session.current_puzzle_id}`);
+      console.log(`   Attempted move: ${move}`);
+      console.log(`   Piece color: ${pieceColorChar}, Player color: ${playerColorChar}`);
+      console.log(`   This move violates color ownership\n`);
+      const wrongMoves = (session.current_puzzle_wrong_moves || 0) + 1;
+      const result = await recordPuzzleFail(req, session, wrongMoves);
+      return res.json(result);
     }
+
+    if (move !== correctMoves[expectedIdx]) {
+      console.log(`\n❌ WRONG MOVE - Puzzle ${session.current_puzzle_id}`);
+      console.log(`   You played: ${move}`);
+      console.log(`   Expected: ${correctMoves[expectedIdx]}`);
+      console.log(`   Full sequence: ${correctMoves.join(' → ')}\n`);
+      const wrongMoves = (session.current_puzzle_wrong_moves || 0) + 1;
+      const result = await recordPuzzleFail(req, session, wrongMoves);
+      return res.json(result);
+    }
+
+    const nextIdx = expectedIdx + 1;
+    const updates = { progress_index: nextIdx + 1 };
+
+    if (nextIdx + 1 >= correctMoves.length) {
+      updates.current_puzzle_wrong_moves = 0;
+      console.log(`\n✅ PUZZLE SOLVED - ${session.current_puzzle_id}`);
+      console.log(`   Correct moves completed: ${correctMoves.join(' → ')}\n`);
+    } else {
+      console.log(`\n✅ CORRECT! Move ${expectedIdx + 1}/${correctMoves.length}`);
+      console.log(`   You played: ${move}`);
+      console.log(`   Next move: ${correctMoves[nextIdx]}\n`);
+    }
+
     await supabase.from('solo_sessions').update(updates).eq('id', session.id);
 
-    if (nextIdx >= correctMoves.length) {
+    if (nextIdx + 1 >= correctMoves.length) {
       return res.json({ correct: true, finished: true });
     }
 
-    // Opponent reply (auto-played by the puzzle author).
     return res.json({
       correct: true,
       finished: false,
@@ -440,7 +478,7 @@ export const submitSoloAttempt = async (req, res) => {
       return res.status(404).json({ error: 'Puzzle missing from cache' });
     }
 
-    const solveTimeMs = sessionAgeMs(session);
+    const solveTimeMs = Date.now() - new Date(session.current_puzzle_solve_started_at).getTime();
     const wrongMoves = session.current_puzzle_wrong_moves || 0;
     const puzzleRating = parseInt(puzzle.rating || puzzle.Rating || 1200, 10);
     const tier = session.tier || (await fetchUserTier(userId)) || 'beginner';
@@ -491,7 +529,7 @@ export const submitSoloAttempt = async (req, res) => {
         current_puzzle_id: null,
         current_puzzle_solve_started_at: null,
         current_puzzle_wrong_moves: 0,
-        progress_index: 0,
+        progress_index: 1,
         wrong_moves: 0,
       })
       .eq('id', session.id);
@@ -520,12 +558,14 @@ export const submitSoloAttempt = async (req, res) => {
     });
 
     if (newInSession >= PUZZLES_PER_SESSION) {
+      // Await session-end for database updates and ELO calculation, but payout happens in background
       const summary = await endSoloSession({
         userId,
         sessionId: session.id,
         reason: 'all_solved',
         ipAddress: getClientIp(req),
       });
+
       return res.json({
         solved: true,
         reward,

@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-crypnight_contracts = "F1E8QvpUYJP71zWz4NwYpPtpUszfp8wb2nKjnrzF2Cmh"
+crypnight_contracts = "DKoawaEk5pJj1npwNYXeCCPF3Uqzxahokq67NY387qbK"
 
 [provider]
 cluster = "devnet"

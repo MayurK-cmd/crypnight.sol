@@ -18,7 +18,7 @@ import {
   Heart,
 } from "lucide-react";
 
-const PUZZLES_PER_SESSION = 10;
+const PUZZLES_PER_SESSION = parseInt(import.meta.env.VITE_PUZZLES_PER_SESSION || '10', 10);
 const SESSION_LIVES = 3; // 3 puzzle-fails in a run ends the session.
 
 export default function Solo() {
@@ -35,6 +35,7 @@ export default function Solo() {
   const [timer, setTimer] = useState(0);
   const hasFetched = useRef(false);
   const [popup, setPopup] = useState(null);
+  const [playerColor, setPlayerColor] = useState(null);
 
   // PHASE 5 — session-level state
   const [puzzlesSolved, setPuzzlesSolved] = useState(0);
@@ -61,22 +62,18 @@ export default function Solo() {
     setMoveFrom("");
 
     try {
-      // /puzzle resumes the active session or starts a new one, and
-      // returns the session_id alongside the puzzle. Critically, the
-      // SAN solution is NOT in the response — the backend strips it.
       const puzzleRes = await API.get("/puzzle");
       const raw = puzzleRes.data.puzzle;
       const sid = puzzleRes.data.session_id;
+      const autoPlayedMove = puzzleRes.data.auto_played_move;
 
       const fetchedPuzzle = {
         puzzle_id: raw.puzzle_id || raw.PuzzleId,
         fen: raw.fen || raw.FEN,
-        // No `moves` here on purpose — backend never sends it.
         rating: raw.rating || raw.Rating,
         themes: raw.themes || raw.Themes,
       };
 
-      // If the backend didn't open a session (e.g. tier not set), open one.
       let activeSessionId = sid;
       if (!activeSessionId) {
         const sessionRes = await API.post("/solo/start", {});
@@ -94,17 +91,25 @@ export default function Solo() {
       setSessionId(activeSessionId);
       setPuzzle(fetchedPuzzle);
 
-      // Reset the chess board. We don't get the first move anymore —
-      // the opponent's reply comes from /solo/move.
       const game = new Chess(fetchedPuzzle.fen);
       chessRef.current = game;
       setPosition(game.fen());
-      setLoading(false);
 
-      // If the resumed session already has current_puzzle_id, /puzzle
-      // may have returned the same puzzle. The /solo/move response
-      // gives us the opponent's first move — but only after we play
-      // ours. So we just let the user make the first move.
+      // Parse player color from FEN second token: 'w' = white, 'b' = black
+      const activeColor = fetchedPuzzle.fen.split(' ')[1];
+      setPlayerColor(activeColor === 'w' ? 'white' : 'black');
+
+      // Display auto-played move with yellow highlighting
+      if (autoPlayedMove) {
+        const autoFrom = autoPlayedMove.slice(0, 2);
+        const autoTo = autoPlayedMove.slice(2, 4);
+        setLastMoveSquares({
+          [autoFrom]: { background: "rgba(255, 200, 87, 0.5)" },
+          [autoTo]: { background: "rgba(255, 152, 0, 0.6)" },
+        });
+      }
+
+      setLoading(false);
     } catch (err) {
       console.error("Failed to load puzzle:", err);
       setLoading(false);
@@ -126,10 +131,18 @@ export default function Solo() {
   }, [sessionId, sessionComplete]);
 
   // ===============================
-  // MOVE OPTIONS — green dots
+  // MOVE OPTIONS — green dots (only for player color)
   // ===============================
   function getMoveOptions(square) {
     const game = chessRef.current;
+    const piece = game.get(square);
+
+    // Only show moves for the player's color
+    if (!piece || (playerColor === 'white' && piece.color !== 'w') || (playerColor === 'black' && piece.color !== 'b')) {
+      setOptionSquares({});
+      return false;
+    }
+
     const moves = game.moves({ square, verbose: true });
 
     if (moves.length === 0) {
@@ -192,8 +205,8 @@ export default function Solo() {
     setPosition(game.fen());
     setOptionSquares({});
     setLastMoveSquares({
-      [from]: { background: "rgba(255, 255, 255, 0.25)" },
-      [to]: { background: "rgba(255, 255, 255, 0.4)" },
+      [from]: { background: "rgba(255, 200, 87, 0.5)" },
+      [to]: { background: "rgba(255, 152, 0, 0.6)" },
     });
 
     try {
@@ -207,9 +220,6 @@ export default function Solo() {
         setPosition(game.fen());
         setLastMoveSquares({});
 
-        // STRICT MODE — one wrong move ends the puzzle. The session
-        // either advances to the next puzzle or ends (3-fail cap /
-        // 10 solved / 10th puzzle was a fail).
         setPuzzlesFailed(res.data.puzzles_failed ?? puzzlesFailed + 1);
         setPuzzlesInSession(res.data.puzzles_in_session ?? puzzlesInSession + 1);
 
@@ -233,7 +243,6 @@ export default function Solo() {
       }
 
       if (res.data.finished) {
-        // Puzzle fully solved — submit to claim the per-puzzle reward.
         const submitRes = await API.post("/solo/submit", { session_id: sessionId });
         setPuzzlesSolved(submitRes.data.puzzles_solved);
         setPuzzlesInSession(submitRes.data.puzzles_in_session);
@@ -256,15 +265,15 @@ export default function Solo() {
         return true;
       }
 
-      // Correct move, opponent replies.
+      // Correct move, opponent replies
       const opponentMove = res.data.opponent_move;
       const oppFrom = opponentMove.slice(0, 2);
       const oppTo = opponentMove.slice(2, 4);
       game.move({ from: oppFrom, to: oppTo, promotion: opponentMove[4] || "q" });
 
       setLastMoveSquares({
-        [oppFrom]: { background: "rgba(255, 255, 0, 0.25)" },
-        [oppTo]: { background: "rgba(255, 255, 0, 0.4)" },
+        [oppFrom]: { background: "rgba(255, 200, 87, 0.5)" },
+        [oppTo]: { background: "rgba(255, 152, 0, 0.6)" },
       });
       setPosition(game.fen());
       return true;
@@ -312,6 +321,7 @@ export default function Solo() {
     setPuzzlesInSession(0);
     setTotalReward(0);
     setTxSignature(null);
+    setPlayerColor(null);
     await fetchPuzzle();
   };
 
@@ -544,12 +554,17 @@ export default function Solo() {
 
             <div className="w-full max-w-[500px] mx-auto rounded-2xl overflow-hidden border-[12px] border-slate-50 shadow-inner">
               <Chessboard
+                boardOrientation={playerColor}
                 options={{
                   position,
                   onSquareClick,
                   onPieceDrop,
                   squareStyles: { ...lastMoveSquares, ...optionSquares },
                   id: "solo-board",
+                  arePiecesDraggable: (piece) => {
+                    if (!playerColor) return false;
+                    return playerColor === 'white' ? piece.color === 'w' : piece.color === 'b';
+                  },
                 }}
               />
             </div>
