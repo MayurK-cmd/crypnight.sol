@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import { createServer } from 'http';
+import WebSocket, { WebSocketServer } from 'ws';
 
 import authRoutes from './src/routes/auth.routes.js';
 import userRoutes from './src/routes/user.routes.js';
@@ -14,6 +16,7 @@ import leaderboardRoutes from './src/routes/leaderboard.routes.js';
 import adminRoutes from './src/routes/admin.routes.js';
 import { loadPuzzles } from './src/services/puzzleLoader.js';
 import { apiLimiter, authLimiter } from './src/middleware/rateLimiter.js';
+import duelWebSocket from './src/sockets/duel.ws.js';
 
 
 dotenv.config();
@@ -48,7 +51,7 @@ app.use(helmet({
 // PHASE 1 §2.3 — Environment-aware CORS
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [process.env.FRONTEND_URL, process.env.CORS_ORIGIN].filter(Boolean)
-  : ['http://localhost:5173', 'http://localhost:3000', process.env.CORS_ORIGIN].filter(Boolean);
+  : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', process.env.CORS_ORIGIN].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -95,6 +98,14 @@ loadPuzzles()
   .then(() => console.log('✅ Puzzles preloaded successfully'))
   .catch(err => console.error('⚠️ Failed to preload puzzles:', err.message));
 
-app.listen(process.env.PORT, () => {
-    console.log(`Server is running on port ${process.env.PORT}`);
+// Wrap Express in HTTP server for WebSocket
+const httpServer = createServer(app);
+
+const wss = new WebSocketServer({ server: httpServer });
+
+// Attach duel WebSocket handler
+duelWebSocket(wss);
+
+httpServer.listen(process.env.PORT || 5000, () => {
+    console.log(`Server is running on port ${process.env.PORT || 5000}`);
 });

@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import jwt from 'jsonwebtoken';
 
 // PHASE 1 §4 — Read the auth token from the httpOnly cookie first; fall back to
 // Authorization: Bearer for compatibility (e.g. server-to-server tools).
@@ -42,3 +43,44 @@ export const requireVerified = (req, res, next) => {
 
   next();
 };
+
+// PHASE 4 — Socket.io auth — reads token from auth object or falls back to cookie
+export const verifySocketAuth = async (socket, next) => {
+  try {
+    let token = socket.handshake.auth?.token;
+
+    if (!token) {
+      const cookieHeader = socket.handshake.headers.cookie || '';
+      token = parseCookie(cookieHeader, 'auth_token');
+    }
+
+    if (!token) return next(new Error('Authentication required'));
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return next(new Error('Invalid token'));
+
+    const user = data.user;
+    if (!user.email_confirmed_at) return next(new Error('Email not verified'));
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('wallet_address, tier, rating, username')
+      .eq('id', user.id)
+      .single();
+
+    socket.user = {
+      id: user.id,
+      email: user.email,
+      ...profile,
+    };
+
+    next();
+  } catch (err) {
+    next(new Error('Invalid token'));
+  }
+};
+
+function parseCookie(cookieStr, name) {
+  const match = cookieStr.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}

@@ -95,7 +95,9 @@ export default function Dashboard() {
             </h2>
             <p className="text-slate-500 mt-1 font-medium text-sm md:text-base">Ready to claim your next SOL reward?</p>
           </div>
-          <button className="w-full md:w-auto bg-black text-white px-8 py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-200 cursor-pointer">
+          <button
+            onClick={() => navigate('/duel')}
+            className="w-full md:w-auto bg-black text-white px-8 py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-200 cursor-pointer">
             <Swords size={18} /> Find Match
           </button>
         </header>

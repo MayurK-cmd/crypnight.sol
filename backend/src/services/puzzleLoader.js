@@ -97,6 +97,25 @@ export function getPuzzleById(puzzleId) {
 }
 
 /**
+ * Get a puzzle for duel based on tier
+ */
+export function getPuzzleForDuel(tier) {
+  const tierBands = {
+    beginner: { min: 600, max: 999 },
+    intermediate: { min: 1000, max: 1499 },
+    pro: { min: 1500, max: 1999 },
+    gm: { min: 2000, max: 3000 },
+  };
+
+  const band = tierBands[tier];
+  if (!band) {
+    throw new Error(`Invalid tier for duel: ${tier}`);
+  }
+
+  return getPuzzleByRating(band.min, band.max);
+}
+
+/**
  * Clear cache (useful for testing or reloading)
  */
 export function clearCache() {

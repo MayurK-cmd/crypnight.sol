@@ -35,8 +35,10 @@ export default function Login() {
     setIsLoading(true);
     try {
       const res = await API.post('/auth/login', { email, password });
-      // PHASE 1 §4 — the httpOnly cookie is set automatically. We just record
-      // the returned user in context and let the router decide where to go.
+      // Store token in localStorage for Socket.io auth
+      if (res.data.session?.access_token) {
+        localStorage.setItem('auth_token', res.data.session.access_token);
+      }
       login(res.data.user);
       showToast("Access Granted. Loading your stats...");
       setTimeout(() => navigate('/redirect'), 1000);

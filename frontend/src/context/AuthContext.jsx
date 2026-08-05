@@ -53,6 +53,7 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       // ignore — cookie is cleared server-side regardless
     }
+    localStorage.removeItem('auth_token');
     setUser(null);
     setNeedsEmailVerification(false);
   };

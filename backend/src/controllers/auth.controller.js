@@ -11,11 +11,23 @@ const cookieOpts = {
   path: '/',
 };
 
+// Non-httpOnly cookie for Socket.io auth (JavaScript-accessible)
+const socketAuthCookieOpts = {
+  httpOnly: false,
+  secure: isProd,
+  sameSite: 'strict',
+  maxAge: 24 * 60 * 60 * 1000,
+  path: '/',
+};
+
 // PHASE 1 §4 — Set the httpOnly cookie on every successful signup/login response.
 // The JSON body still returns session.access_token so the live frontend keeps
 // working through the deploy; new frontends should rely on the cookie alone.
 const setAuthCookie = (res, token) => {
-  if (token) res.cookie('auth_token', token, cookieOpts);
+  if (token) {
+    res.cookie('auth_token', token, cookieOpts);
+    res.cookie('socket_auth_token', token, socketAuthCookieOpts);
+  }
 };
 
 export const signup = async (req, res) => {
@@ -142,9 +154,10 @@ export const login = async (req, res) => {
   });
 };
 
-// PHASE 1 §4.5 — Logout endpoint clears the cookie
+// PHASE 1 §4.5 — Logout endpoint clears the cookies
 export const logout = async (req, res) => {
   res.clearCookie('auth_token', { path: '/' });
+  res.clearCookie('socket_auth_token', { path: '/' });
 
   // Try to surface a userId for audit when we can. The token is optional here —
   // logout should always succeed at clearing the cookie.
