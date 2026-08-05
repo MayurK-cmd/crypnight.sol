@@ -6,6 +6,7 @@ import Setup from './components/auth/Setup'
 import Profile from './components/auth/Profile'
 import Redirect from './components/auth/Redirect'
 import Solo from './components/gameModes/Solo'
+import Duel from './components/gameModes/Duel'
 import MatchHistory from './components/MatchHistory.jsx'
 import Leaderboard from './components/Leaderboard.jsx'
 
@@ -32,6 +33,7 @@ function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/redirect" element={<Redirect />} />
         <Route path="/solo" element={<Solo />} />
+        <Route path="/duel" element={<Duel />} />
         <Route path="/match-history" element={<MatchHistory />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
 

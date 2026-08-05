@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import API from "../../api/axios";
 import { useNavigate, Link } from "react-router-dom";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { Connection } from "@solana/web3.js";
 import { User, Wallet, Shield, Calendar, ArrowLeft, Loader2 } from 'lucide-react';
 
 const Toast = ({ message, type, onClose }) => (
@@ -19,7 +21,11 @@ export default function Profile() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+  const [solBalance, setSolBalance] = useState(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
   const navigate = useNavigate();
+  const { publicKey } = useWallet();
+  const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -40,6 +46,16 @@ export default function Profile() {
     };
     fetchProfile();
   }, [navigate]);
+
+  useEffect(() => {
+    if (publicKey) {
+      setBalanceLoading(true);
+      connection.getBalance(publicKey)
+        .then(balance => setSolBalance(balance / 1_000_000_000))
+        .catch(err => console.error('Failed to fetch balance:', err))
+        .finally(() => setBalanceLoading(false));
+    }
+  }, [publicKey, connection]);
 
   if (loading) {
     return (
@@ -86,9 +102,20 @@ export default function Profile() {
                 </div>
               </div>
 
+              {/* Solana Balance Card */}
+              <div className="bg-slate-50 border border-slate-100 p-8 rounded-[2.5rem] flex items-start gap-5 shadow-sm">
+                <div className="p-4 bg-white rounded-2xl text-emerald-600 shadow-sm">◎</div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Solana Balance</span>
+                  <p className="text-xl font-black text-emerald-600 mt-1 font-mono">
+                    {balanceLoading ? <Loader2 size={20} className="animate-spin" /> : (solBalance !== null ? `${solBalance.toFixed(4)} SOL` : "N/A")}
+                  </p>
+                </div>
+              </div>
+
               {/* Tier Card */}
               <div className="bg-slate-50 border border-slate-100 p-8 rounded-[2.5rem] flex items-start gap-5 shadow-sm">
-                <div className="p-4 bg-white rounded-2xl text-violet-600 shadow-sm"><Shield size={24} /></div>
+                <div className="p-4 bg-white rounded-2xl text-emerald-600 shadow-sm"><Shield size={24} /></div>
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Current Rank</span>
                   <p className="text-xl font-black text-slate-900 mt-1 uppercase italic tracking-tighter">

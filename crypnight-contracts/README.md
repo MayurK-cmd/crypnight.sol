@@ -83,7 +83,34 @@ Transfers 2 SOL to treasury PDA (`omyRQ6Ynne5seohfqiMQRPyaMuSkPDi9gksUeKm4oi6`).
 - **Effect:** Transfer SOL from funder to treasury
 - **Note:** Can be called by anyone
 
-## Testing
+---
+
+## Magic Block Ephemeral Rollups (ER)
+
+CrypNight smart contracts execute payouts on **Magic Block Ephemeral Rollups**, not mainnet Solana:
+
+- **Program lives on ER:** Treasury PDA and payout state are stored on the ER shard
+- **Backend initiates:** Backend sends signed `pay_reward` instructions to ER via Magic Block router
+- **Fast settlement:** Confirmation in ~1-2 seconds (vs. Solana's ~13s slot finality)
+- **Final:** Results commit to Solana after ER batch settlement; no rollback risk
+- **No mainnet clutter:** Treasury PDA never appears in mainnet ledger
+
+### Treasury State
+
+Treasury PDA (`omyRQ6Ynne5seohfqiMQRPyaMuSkPDi9gksUeKm4oi6` on devnet ER):
+- Holds SOL funded via `fund-treasury.js`
+- Authority account required to sign `pay_reward` transactions
+- 3% platform fee deducted on each payout
+
+### Backend Integration
+
+Backend connects to both:
+1. **Solana devnet** (`https://api.devnet.solana.com`) — for baseline state verification
+2. **Magic Block ER router** (`https://devnet-router.magicblock.app`) — sends payout transactions
+
+See [backend/README.md](../backend/README.md) for payout flow architecture and [Magic Block Docs](https://docs.magicblock.io) for ER details.
+
+---
 
 ```bash
 anchor test
@@ -94,26 +121,34 @@ Runs Rust tests + integration tests.
 ## File Structure
 
 ```
-programs/crypnight-contracts/src/
-├── lib.rs
-│   ├── initialize_treasury()  # Setup
-│   ├── pay_reward()           # Main payout
-│   ├── fund_treasury()        # Top-up funds
-│   └── PlatformTreasury{}     # Struct
+programs/
+├── crypnight-contracts/src/
+│   ├── lib.rs
+│   │   ├── initialize_treasury()  # Setup
+│   │   ├── pay_reward()           # Main payout (ER)
+│   │   ├── fund_treasury()        # Top-up funds
+│   │   └── PlatformTreasury{}     # Struct
+│   └── state.rs
+├── crypnight-duel/src/
+│   ├── lib.rs                     # Duel-specific payouts
+│   └── state.rs
 └── scripts/
-    ├── fund-treasury.js       # Fund existing treasury
-    └── initialize-treasury-prod.js (legacy, requires reset)
+    ├── fund-treasury.js           # Fund existing treasury on ER
+    └── initialize-treasury-prod.js (legacy)
 ```
 
-## On-Chain Addresses (Devnet)
+## On-Chain Addresses (Devnet ER)
 
-Add your deployed addresses after deployment:
+Magic Block ER shard addresses (not mainnet):
 
-- **Program:** `<your-deployed-program-id>`
-- **Treasury PDA:** `<your-treasury-pda>`
+- **Solo Program:** `<SOLO_PROGRAM_ID>`
+- **Duel Program:** `<DUEL_PROGRAM_ID>`
+- **Treasury PDA:** `omyRQ6Ynne5seohfqiMQRPyaMuSkPDi9gksUeKm4oi6` (devnet ER)
 - **Authority:** `<your-authority-wallet-address>`
 
-View on [Solana Explorer](https://explorer.solana.com/?cluster=devnet).
+View ER transactions via Magic Block explorer: https://explorer.magicblock.io (devnet mode).
+
+*Replace placeholders with actual deployed program IDs after `anchor deploy`.*
 
 ## Magic Block ER
 

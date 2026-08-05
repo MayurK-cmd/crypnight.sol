@@ -2,13 +2,25 @@ import { useContext, useEffect, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import API from "../../api/axios";
-import { LayoutDashboard, User, LogOut, Trophy, Swords, Zap, Menu, X } from 'lucide-react';
+import { LayoutDashboard, User, LogOut, Trophy, Swords, Zap, Menu, X, Gamepad2 } from 'lucide-react';
+
+const CHESS_QUOTES = [
+  "Chess is life. — Bobby Fischer",
+  "Chess is mental torture. — Garry Kasparov",
+  "Chess is the gymnasium of the mind. — Blaise Pascal",
+  "Chess holds its master in its own bonds, shackling the mind and brain. — Albert Einstein",
+  "The pawns are the soul of chess. — François-André Danican Philidor",
+  "You must take your opponent into a deep, dark forest where 2+2 is 5, and the path leading out is only wide enough for one. — Mikhail Tal",
+  "When you see a good move—wait—look for a better one. — Emanuel Lasker",
+  "The blunders are all there on the board, waiting to be made. — Savielly Tartakower",
+];
 
 export default function Dashboard() {
   const { logout, user } = useContext(AuthContext);
   const navigate = useNavigate();
   const location = useLocation();
   const [rating, setRating] = useState("---");
+  const [randomQuote, setRandomQuote] = useState("");
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -20,11 +32,12 @@ export default function Dashboard() {
       }
     };
     fetchStats();
+    setRandomQuote(CHESS_QUOTES[Math.floor(Math.random() * CHESS_QUOTES.length)]);
   }, []);
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/');
   };
 
   const navLinks = [
@@ -32,7 +45,6 @@ export default function Dashboard() {
     { name: 'Profile', path: '/profile', icon: <User size={20} /> },
     { name: 'History', path: '/match-history', icon: <Trophy size={20} /> },
     { name: 'Rankings', path: '/leaderboard', icon: <Swords size={20} /> },
-    { name: 'Solo', path: '/solo', icon: <Zap size={20} /> },
   ];
 
   return (
@@ -95,10 +107,20 @@ export default function Dashboard() {
             </h2>
             <p className="text-slate-500 mt-1 font-medium text-sm md:text-base">Ready to claim your next SOL reward?</p>
           </div>
-          <button className="w-full md:w-auto bg-black text-white px-8 py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-200 cursor-pointer">
-            <Swords size={18} /> Find Match
-          </button>
+          <a
+            href="https://faucet.solana.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full md:w-auto bg-black text-white px-8 py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-200 cursor-pointer"
+          >
+            <Zap size={18} /> Solana Faucet
+          </a>
         </header>
+
+        {/* Chess Quote Section */}
+        <div className="mb-8 bg-slate-50 border border-slate-100 rounded-[2.5rem] p-8 md:p-10 shadow-sm">
+          <p className="text-lg md:text-xl italic text-slate-700 font-medium text-center">"{randomQuote}"</p>
+        </div>
 
         {/* Bento Grid Stats/Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -106,14 +128,13 @@ export default function Dashboard() {
              <div className="relative z-10">
                 <h3 className="text-2xl font-bold mb-2 uppercase tracking-tight">Solo Speed Arena</h3>
                 <p className="text-slate-400 mb-8 text-sm max-w-xs leading-relaxed">Solve high-intensity puzzles to earn SOL based on your ELO tier.</p>
-                <button 
+                <button
                   onClick={() => navigate('/solo')}
                   className="w-full md:w-auto bg-emerald-400 text-black px-8 py-4 rounded-2xl font-black hover:bg-emerald-300 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Zap size={18} fill="currentColor" /> ENTER SOLO MODE
                 </button>
              </div>
-             {/* Decorative Background Element */}
              <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-all duration-700"></div>
           </div>
 
@@ -123,6 +144,28 @@ export default function Dashboard() {
               <p className="text-5xl font-black italic mt-2 text-emerald-600 tracking-tighter">{rating}</p>
             </div>
             <p className="text-[10px] text-slate-400 font-bold mt-4 uppercase tracking-widest border-t border-slate-200 pt-4">Top 12% Globally</p>
+          </div>
+
+          <div className="md:col-span-2 bg-slate-900 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-xl shadow-slate-200 group">
+             <div className="relative z-10">
+                <h3 className="text-2xl font-bold mb-2 uppercase tracking-tight">Duel Arena</h3>
+                <p className="text-slate-400 mb-8 text-sm max-w-xs leading-relaxed">Challenge opponents in real-time competitive puzzle duels with stake deposits.</p>
+                <button
+                  onClick={() => navigate('/duel')}
+                  className="w-full md:w-auto bg-emerald-400 text-black px-8 py-4 rounded-2xl font-black hover:bg-emerald-300 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Gamepad2 size={18} fill="currentColor" /> ENTER DUEL MODE
+                </button>
+             </div>
+             <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-all duration-700"></div>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-100 rounded-[2.5rem] p-8 flex flex-col justify-between shadow-sm min-h-[200px]">
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Game Modes</span>
+              <p className="text-2xl font-black italic mt-2 text-slate-700 tracking-tighter">2 Active</p>
+            </div>
+            <p className="text-[10px] text-slate-400 font-bold mt-4 uppercase tracking-widest border-t border-slate-200 pt-4">More Coming Soon</p>
           </div>
         </div>
       </main>

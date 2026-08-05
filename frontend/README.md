@@ -38,23 +38,41 @@ Output: `dist/` folder (ready for Vercel deployment).
 ### Key Features
 
 - **Phantom Wallet Integration** — Connect wallet via `@solana/wallet-adapter`
-- **Chess Board** — Puzzle display with move input
+- **Chess Board** — Puzzle display with move input (Chess.js + react-chessboard)
+- **Solo Mode** — Timed 10-puzzle runs with instant on-chain rewards
+- **Duel Mode** — Real-time multiplayer puzzle duels with stake deposits via WebSocket
 - **Session Timer** — Real-time countdown per puzzle
 - **Leaderboard** — Global + tier-based rankings
+- **Magic Block ER** — Fast settlement via Ephemeral Rollups (payouts in ~1-2s)
 
 ### File Structure
 
 ```
 src/
 ├── components/
-│   ├── gameModes/Solo.jsx       # Puzzle timer + move submission
-│   ├── auth/                     # Login, signup, wallet linking
-│   └── leaderboard/              # Rankings display
+│   ├── gameModes/
+│   │   ├── Solo.jsx              # Solo mode — timed puzzles
+│   │   └── Duel.jsx              # Duel mode — real-time multiplayer
+│   ├── auth/                      # Login, signup, wallet linking
+│   ├── leaderboard/               # Rankings display
+│   ├── Dashboard.jsx              # Game modes + chess quotes + stats
+│   └── Profile.jsx                # Wallet connection + SOL balance
 ├── pages/
-│   ├── Dashboard.jsx             # Session history + stats
-│   └── Landing.jsx               # Top 5 leaderboard + intro
+│   ├── Landing.jsx                # Top 5 leaderboard + intro
+│   └── History.jsx                # Past sessions log
+├── hooks/
+│   └── useDuelWebSocket.js         # WebSocket client for duel matchmaking
 └── services/
-    └── api.js                    # API client (axios)
+    └── api.js                     # API client (axios)
+```
+
+### Environment Variables
+
+Create `.env` (optional for local dev, defaults to `http://localhost:5000`):
+
+```env
+VITE_API_URL=http://localhost:5000
+VITE_SOLANA_NETWORK=devnet
 ```
 
 ### Deployment (Vercel)
@@ -64,3 +82,12 @@ vercel deploy --prod
 ```
 
 Set `VITE_API_URL` env var if backend is on a different domain.
+
+### Magic Block ER Integration
+
+Payouts use **Magic Block Ephemeral Rollups** for instant settlement:
+- Solo mode: End session → backend sends payout transaction to ER → ~1-2s confirmation
+- Duel mode: Match ends → payouts settle on ER → player sees balance update
+- No waiting for Solana slot finality; results are final on ER immediately
+
+See backend/README.md for payout architecture.

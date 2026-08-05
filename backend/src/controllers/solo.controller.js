@@ -15,18 +15,18 @@ const SESSION_FAIL_CAP = 3; // 3 puzzle-fails in a run ends the session.
 
 const fetchUserTier = async (userId) => {
   const { data } = await supabase
-    .from('users')
+    .from('game_profiles')
     .select('tier')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .single();
   return data?.tier ?? null;
 };
 
 const fetchUserRating = async (userId) => {
   const { data } = await supabase
-    .from('users')
+    .from('game_profiles')
     .select('rating')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .single();
   return data?.rating ?? 1000;
 };
@@ -87,9 +87,9 @@ export const endSoloSession = async ({ userId, sessionId, reason, ipAddress = nu
   const endedAt = new Date().toISOString();
 
   await supabase
-    .from('users')
+    .from('game_profiles')
     .update({ rating: newRating })
-    .eq('id', userId);
+    .eq('user_id', userId);
 
   await supabase
     .from('solo_sessions')
@@ -127,9 +127,9 @@ export const endSoloSession = async ({ userId, sessionId, reason, ipAddress = nu
     const payoutPromise = (async () => {
       try {
         const { data: user } = await supabase
-          .from('users')
+          .from('game_profiles')
           .select('wallet_address')
-          .eq('id', userId)
+          .eq('user_id', userId)
           .single();
 
         if (user?.wallet_address) {

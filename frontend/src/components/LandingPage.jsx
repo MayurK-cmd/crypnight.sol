@@ -112,12 +112,12 @@ const LandingPage = () => {
       <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden text-center">
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:32px_32px] opacity-40"></div>
         <div className="max-w-7xl mx-auto px-6">
-          <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-1.5 rounded-full text-xs font-bold mb-8">
+          <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-1.5 rounded-full text-xs font-bold mb-8">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            BUILD UNDER PROGRESS ON SOLANA
+            LIVE ON DEVNET
           </div>
           
           <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight mb-8 leading-[1.1]">
@@ -152,6 +152,37 @@ const LandingPage = () => {
       <div id="modes">
         <GameModes />
       </div>
+
+      {/* Magic Block ER Section */}
+      <section className="py-24 px-6 bg-gradient-to-b from-slate-50 to-white border-t border-slate-100">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-1.5 rounded-full text-xs font-bold mb-6">
+            <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+            POWERED BY MAGIC BLOCK
+          </div>
+          <h2 className="text-3xl md:text-4xl font-black tracking-tight mb-4">Instant Settlement on Solana</h2>
+          <p className="text-lg text-slate-500 max-w-2xl mx-auto mb-8 font-medium">
+            CrypNight uses <span className="font-bold text-slate-700">Magic Block Ephemeral Rollups (ER)</span> for lightning-fast payouts. Your earnings settle in ~1-2 seconds, not slots. No waiting for Solana confirmation delays—just skill, intelligence, and instant rewards.
+          </p>
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="p-6 rounded-2xl bg-white border border-slate-200">
+              <div className="text-2xl font-black text-emerald-600 mb-2">⚡</div>
+              <h3 className="font-bold text-slate-900 mb-2">Instant Finality</h3>
+              <p className="text-sm text-slate-500">Payouts confirmed in milliseconds via Magic Block ER shard, not Solana slots</p>
+            </div>
+            <div className="p-6 rounded-2xl bg-white border border-slate-200">
+              <div className="text-2xl font-black text-emerald-600 mb-2">💰</div>
+              <h3 className="font-bold text-slate-900 mb-2">Settled & Final</h3>
+              <p className="text-sm text-slate-500">Results commit to Solana after ER batch—100% final, zero rollback risk</p>
+            </div>
+            <div className="p-6 rounded-2xl bg-white border border-slate-200">
+              <div className="text-2xl font-black text-emerald-600 mb-2">🎯</div>
+              <h3 className="font-bold text-slate-900 mb-2">Better UX</h3>
+              <p className="text-sm text-slate-500">See your balance update instantly after solving—no waiting, no guessing</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Leaderboard Section */}
       <section id="leaderboard" className="py-24 bg-white border-t border-slate-50">

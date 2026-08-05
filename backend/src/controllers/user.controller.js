@@ -30,9 +30,9 @@ export const linkWallet = async (req, res) => {
 
     // Make sure this wallet isn't already linked to someone else (cheap extra check).
     const { data: existingUser } = await supabase
-      .from("users")
-      .select("wallet_address, id")
-      .eq("id", userId)
+      .from("game_profiles")
+      .select("wallet_address, user_id")
+      .eq("user_id", userId)
       .single();
 
     if (existingUser?.wallet_address) {
@@ -48,9 +48,9 @@ export const linkWallet = async (req, res) => {
     }
 
     await supabase
-      .from("users")
+      .from("game_profiles")
       .update({ wallet_address: walletAddress })
-      .eq("id", userId);
+      .eq("user_id", userId);
 
     await logAction({
       userId,
@@ -82,9 +82,9 @@ export const setTier = async (req, res) => {
   const canonical = normalizeTier(tier);
 
   const { data: existingUser } = await supabase
-    .from('users')
+    .from('game_profiles')
     .select('tier')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .single();
 
   if (existingUser?.tier) {
@@ -94,13 +94,13 @@ export const setTier = async (req, res) => {
   }
 
   await supabase
-    .from('users')
+    .from('game_profiles')
     .update({
       tier: canonical,
       rating: TIER_DEFAULT_RATINGS[canonical],
       is_setup_complete: true,
     })
-    .eq('id', userId);
+    .eq('user_id', userId);
 
   await logAction({
     userId,
@@ -117,9 +117,9 @@ export const getProfile = async (req, res) => {
     const userId = req.user.id;
 
     const { data, error } = await supabase
-      .from('users')
+      .from('game_profiles')
       .select('*')
-      .eq('id', userId)
+      .eq('user_id', userId)
       .single();
 
     if (error) {

@@ -40,8 +40,8 @@ export const signup = async (req, res) => {
   // reads better than surfacing a Postgres 23505. Skip when the auth
   // signup itself failed (no user to attach a username to).
   const { data: existing } = await supabase
-    .from('users')
-    .select('id')
+    .from('game_profiles')
+    .select('user_id')
     .ilike('username', username)
     .maybeSingle();
   if (existing) {
@@ -50,9 +50,9 @@ export const signup = async (req, res) => {
 
   // Create the game profile row
   const { error: insertError } = await supabase
-    .from('users')
+    .from('game_profiles')
     .insert({
-      id: data.user.id,
+      user_id: data.user.id,
       wallet_address: null,
       tier: null,
       rating: 1000,

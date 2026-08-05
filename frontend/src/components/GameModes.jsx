@@ -1,4 +1,8 @@
+import { useNavigate } from 'react-router-dom';
+
 const GameModes = () => {
+  const navigate = useNavigate();
+
   return (
     <section id="modes" className="py-24 bg-slate-50">
       <div className="max-w-7xl mx-auto px-6">
@@ -21,7 +25,10 @@ const GameModes = () => {
               <li className="flex items-center gap-2">✅ No staking required</li>
               <li className="flex items-center gap-2">✅ Instant reward claim</li>
             </ul>
-            <button className="w-full py-4 bg-slate-100 rounded-2xl font-bold group-hover:bg-emerald-400 group-hover:text-black transition-all cursor-pointer">
+            <button
+              onClick={() => navigate('/solo')}
+              className="w-full py-4 bg-slate-100 rounded-2xl font-bold group-hover:bg-emerald-400 group-hover:text-black transition-all cursor-pointer"
+            >
               Enter Practice
             </button>
           </div>
@@ -35,15 +42,23 @@ const GameModes = () => {
             </div>
             <h3 className="text-2xl font-bold mb-4">Puzzle Duel</h3>
             <p className="text-slate-400 mb-8 text-sm">Face an opponent in real-time. High stakes, high reward. Only the fastest mind takes the pool.</p>
-            <div className="grid grid-cols-3 gap-2 mb-10">
-              {[0.05, 0.1, 0.25].map(stake => (
-                <div key={stake} className="bg-white/5 border border-white/10 rounded-xl p-2 text-center">
-                  <span className="block text-[10px] text-slate-500 uppercase">Stake</span>
-                  <span className="text-sm font-bold">{stake} SOL</span>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-10">
+              {[
+                { tier: 'Beginner', stake: 0.05 },
+                { tier: 'Intermediate', stake: 0.10 },
+                { tier: 'Pro', stake: 0.25 },
+                { tier: 'GM', stake: 0.50 }
+              ].map(({tier, stake}) => (
+                <div key={stake} className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
+                  <span className="block text-[9px] text-slate-500 uppercase font-bold">{tier}</span>
+                  <span className="text-sm font-bold text-emerald-400">{stake} SOL</span>
                 </div>
               ))}
             </div>
-            <button className="w-full py-4 bg-emerald-400 text-black rounded-2xl font-bold hover:scale-[1.02] transition-transform relative z-10 cursor-pointer">
+            <button
+              onClick={() => navigate('/duel')}
+              className="w-full py-4 bg-emerald-400 text-black rounded-2xl font-bold hover:scale-[1.02] transition-transform relative z-10 cursor-pointer"
+            >
               Find Match
             </button>
           </div>

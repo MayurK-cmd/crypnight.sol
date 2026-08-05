@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import http from 'http';
 
 import authRoutes from './src/routes/auth.routes.js';
 import userRoutes from './src/routes/user.routes.js';
@@ -12,8 +13,10 @@ import roundRoutes from './src/routes/round.routes.js';
 import historyRoutes from './src/routes/history.routes.js';
 import leaderboardRoutes from './src/routes/leaderboard.routes.js';
 import adminRoutes from './src/routes/admin.routes.js';
+import duelRoutes from './src/routes/duel.routes.js';
 import { loadPuzzles } from './src/services/puzzleLoader.js';
 import { apiLimiter, authLimiter } from './src/middleware/rateLimiter.js';
+import { setupDuelWebSocket } from './src/services/duelSocket.js';
 
 
 dotenv.config();
@@ -85,6 +88,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/puzzle', puzzleRoutes);
 app.use('/api/solo', soloRoutes);
+app.use('/api/duel', duelRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/round', roundRoutes);
@@ -95,6 +99,14 @@ loadPuzzles()
   .then(() => console.log('✅ Puzzles preloaded successfully'))
   .catch(err => console.error('⚠️ Failed to preload puzzles:', err.message));
 
-app.listen(process.env.PORT, () => {
-    console.log(`Server is running on port ${process.env.PORT}`);
+// Create HTTP server for WebSocket support
+const server = http.createServer(app);
+
+// Setup duel WebSocket
+setupDuelWebSocket(server);
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+  console.log(`Duel WebSocket available at ws://localhost:${PORT}/ws/duel`);
 });

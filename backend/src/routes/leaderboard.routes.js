@@ -8,8 +8,8 @@ import {
 
 const router = express.Router();
 
-router.get('/global', verifyUser, requireVerified, getGlobalLeaderboard);
-router.get('/tier/:tier', verifyUser, requireVerified, getTierLeaderboard);
+router.get('/global', getGlobalLeaderboard);
+router.get('/tier/:tier', getTierLeaderboard);
 router.get('/my-rank', verifyUser, requireVerified, getMyRank);
 
 export default router;

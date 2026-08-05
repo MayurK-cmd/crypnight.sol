@@ -94,9 +94,9 @@ export const completePuzzleInRound = async (req, res) => {
 
     // Get current user rating
     const { data: user } = await supabase
-      .from("users")
+      .from("game_profiles")
       .select("rating")
-      .eq("id", userId)
+      .eq("user_id", userId)
       .single();
 
     const userRating = user.rating || 1000;
@@ -119,9 +119,9 @@ export const completePuzzleInRound = async (req, res) => {
 
     // Update user rating
     await supabase
-      .from("users")
+      .from("game_profiles")
       .update({ rating: newRating })
-      .eq("id", userId);
+      .eq("user_id", userId);
 
     // Increment puzzle count on round
     const newCount = round.puzzle_count + 1;
@@ -188,9 +188,9 @@ export const getRoundSummary = async (req, res) => {
 
     // Get current rating
     const { data: user } = await supabase
-      .from("users")
+      .from("game_profiles")
       .select("rating")
-      .eq("id", userId)
+      .eq("user_id", userId)
       .single();
 
     res.json({
