@@ -48,6 +48,24 @@ export const signup = async (req, res) => {
     return res.status(409).json({ error: 'Username already taken' });
   }
 
+  // Insert into public.users (required for foreign key references in solo_sessions, duel_sessions, etc.)
+  const { error: usersInsertError } = await supabase
+    .from('users')
+    .insert({
+      id: data.user.id,
+      wallet_address: null,
+      tier: null,
+      rating: 1000,
+      username,
+    });
+
+  if (usersInsertError) {
+    console.error('Users table insert error:', usersInsertError);
+    return res.status(500).json({
+      error: 'User created but profile creation failed',
+    });
+  }
+
   // Create the game profile row
   const { error: insertError } = await supabase
     .from('game_profiles')

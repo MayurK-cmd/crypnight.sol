@@ -195,6 +195,32 @@ export const startSoloSession = async (req, res) => {
       return res.status(400).json({ error: 'Tier not set — complete setup first' });
     }
 
+    // Ensure user exists in public.users (for foreign key references in solo_sessions, etc.)
+    // This handles users who signed up before game_profiles was the primary profile table.
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!existingUser) {
+      const { data: profile } = await supabase
+        .from('game_profiles')
+        .select('username, rating, tier, wallet_address')
+        .eq('user_id', userId)
+        .single();
+
+      await supabase
+        .from('users')
+        .insert({
+          id: userId,
+          username: profile?.username || null,
+          rating: profile?.rating || 1000,
+          tier: profile?.tier || null,
+          wallet_address: profile?.wallet_address || null,
+        });
+    }
+
     const existing = await fetchActiveSession(userId);
 
     if (existing && existing.puzzles_in_session < PUZZLES_PER_SESSION && !isStale(existing)) {

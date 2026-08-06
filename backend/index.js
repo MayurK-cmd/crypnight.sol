@@ -14,7 +14,7 @@ import historyRoutes from './src/routes/history.routes.js';
 import leaderboardRoutes from './src/routes/leaderboard.routes.js';
 import adminRoutes from './src/routes/admin.routes.js';
 import duelRoutes from './src/routes/duel.routes.js';
-import { loadPuzzles } from './src/services/puzzleLoader.js';
+import { loadPuzzles, isPuzzlesReady } from './src/services/puzzleLoader.js';
 import { apiLimiter, authLimiter } from './src/middleware/rateLimiter.js';
 import { setupDuelWebSocket } from './src/services/duelSocket.js';
 
@@ -86,18 +86,21 @@ app.get('/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api/puzzle', puzzleRoutes);
-app.use('/api/solo', soloRoutes);
+// Middleware to ensure puzzles are loaded before handling puzzle/solo requests
+const ensurePuzzlesReady = (req, res, next) => {
+  if (!isPuzzlesReady()) {
+    return res.status(503).json({ error: 'Server is still loading puzzles. Please try again in a moment.' });
+  }
+  next();
+};
+
+app.use('/api/puzzle', ensurePuzzlesReady, puzzleRoutes);
+app.use('/api/solo', ensurePuzzlesReady, soloRoutes);
 app.use('/api/duel', duelRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/round', roundRoutes);
 app.use('/api/admin', adminRoutes);
-
-// Preload puzzles on server startup
-loadPuzzles()
-  .then(() => console.log('✅ Puzzles preloaded successfully'))
-  .catch(err => console.error('⚠️ Failed to preload puzzles:', err.message));
 
 // Create HTTP server for WebSocket support
 const server = http.createServer(app);
@@ -106,7 +109,17 @@ const server = http.createServer(app);
 setupDuelWebSocket(server);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`Duel WebSocket available at ws://localhost:${PORT}/ws/duel`);
+
+// Wait for puzzles to be ready before starting server
+const startServer = async () => {
+  await loadPuzzles();
+  server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log(`Duel WebSocket available at ws://localhost:${PORT}/ws/duel`);
+  });
+};
+
+startServer().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });

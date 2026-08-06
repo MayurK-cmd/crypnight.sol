@@ -5,6 +5,13 @@ let puzzleCache = null;
 let isLoading = false;
 
 /**
+ * Check if puzzles are ready
+ */
+export function isPuzzlesReady() {
+  return puzzleCache !== null;
+}
+
+/**
  * Load puzzles from Supabase Storage
  * Caches in memory after first load
  */
@@ -35,7 +42,7 @@ export async function loadPuzzles() {
     }
 
     const text = await data.text();
-    
+
     // Parse CSV
     puzzleCache = parse(text, {
       columns: true,
@@ -89,8 +96,8 @@ export function getPuzzleById(puzzleId) {
     throw new Error('Puzzles not loaded. Call loadPuzzles() first.');
   }
 
-  return puzzleCache.find(p => 
-    p.puzzle_id === puzzleId || 
+  return puzzleCache.find(p =>
+    p.puzzle_id === puzzleId ||
     p.PuzzleId === puzzleId ||
     p.id === puzzleId
   );
