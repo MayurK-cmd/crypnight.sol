@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import { triggerDuelWin, getDemoStatus } from '../controllers/demo.controller.js';
+
 const router = express.Router();
-const { triggerDuelWin, getDemoStatus } = require('../controllers/demo.controller');
 
 const demoAuth = (req, res, next) => {
   const secret = req.headers['x-demo-secret'];
@@ -13,4 +14,4 @@ const demoAuth = (req, res, next) => {
 router.post('/trigger-duel-win', demoAuth, triggerDuelWin);
 router.get('/status', getDemoStatus);
 
-module.exports = router;
+export default router;

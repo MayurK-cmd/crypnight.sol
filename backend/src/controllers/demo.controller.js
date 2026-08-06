@@ -1,6 +1,6 @@
-const { supabase } = require('../config/supabase');
-const { duelPayoutService } = require('../services/duelPayoutService');
-const anchor = require('@coral-xyz/anchor');
+import { supabase } from '../config/supabase.js';
+import { settleDuel } from '../services/duelPayoutService.js';
+import * as anchor from '@coral-xyz/anchor';
 
 let demoState = {
   status: 'ready',
@@ -12,7 +12,7 @@ let demoState = {
   winnerPayout: null,
 };
 
-const triggerDuelWin = async (req, res) => {
+export const triggerDuelWin = async (req, res) => {
   const { winnerWallet } = req.body;
 
   if (!winnerWallet) {
@@ -53,12 +53,13 @@ const triggerDuelWin = async (req, res) => {
       playerBWallet: process.env.DEMO_PLAYER_B_WALLET,
     };
 
-    const txSignature = await duelPayoutService.settleDuel(
+    const result = await settleDuel(
       process.env.DEMO_MATCH_ID,
       state,
       winnerWallet
     );
 
+    const txSignature = result.signature || result.tx;
     const potSol = 0.10;
     const winnerPayout = potSol * 0.80;
 
@@ -95,8 +96,6 @@ const triggerDuelWin = async (req, res) => {
   }
 };
 
-const getDemoStatus = (req, res) => {
+export const getDemoStatus = (req, res) => {
   res.json(demoState);
 };
-
-module.exports = { triggerDuelWin, getDemoStatus };

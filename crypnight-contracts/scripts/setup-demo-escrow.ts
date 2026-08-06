@@ -3,8 +3,8 @@ import { Program } from "@coral-xyz/anchor";
 import * as fs from "fs";
 import * as path from "path";
 
-const PLAYER_A_WALLET = "YOUR_DEMO_WINNER_WALLET_ADDRESS";
-const PLAYER_B_WALLET = "YOUR_DEMO_OPPONENT_WALLET_ADDRESS";
+const PLAYER_A_WALLET = "HxjB35T6gCfDH6wREUurTyvahLT5Gp929AqjJNsFpYbo";
+const PLAYER_B_WALLET = "82YWe86nQSdrBixFhUxHH5nSPuSCzKWc4YhXqRsspYFm";
 const DEMO_TIER = 0;
 const DEMO_MATCH_ID = "demo-match-00000000000000000000000000000001";
 
