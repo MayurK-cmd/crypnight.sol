@@ -167,7 +167,7 @@ export default function DemoPage() {
 
         <div className="max-w-4xl mx-auto">
           <div className="mb-10">
-            <h1 className="text-4xl font-black tracking-tight mb-2">⚔️ Duel Mode Demo</h1>
+            <h1 className="text-4xl font-black tracking-tight mb-2">⚔️ Duel Mode Payout</h1>
             <p className="text-slate-600">
               Real SOL transfer on Solana via MagicBlock Ephemeral Rollups
             </p>
@@ -180,7 +180,7 @@ export default function DemoPage() {
                 <div className="text-center flex-1">
                   <div className="text-sm text-slate-600 mb-2 font-semibold">Player A</div>
                   <div className="font-mono text-base text-slate-900 font-bold">
-                    {shortWallet(process.env.VITE_DEMO_PLAYER_A_WALLET || '7xKX...kQ3p')}
+                    {shortWallet(process.env.VITE_DEMO_PLAYER_A_WALLET || 'DoFKt25jpmc6gRQeLAVyNdSG3PTbcSZmG5Xfv31ca6mN')}
                   </div>
                   <div className="text-sm text-emerald-600 mt-2 font-semibold">0.05 SOL staked</div>
                 </div>
@@ -193,7 +193,7 @@ export default function DemoPage() {
                 <div className="text-center flex-1">
                   <div className="text-sm text-slate-600 mb-2 font-semibold">Player B</div>
                   <div className="font-mono text-base text-slate-900 font-bold">
-                    {shortWallet(process.env.VITE_DEMO_PLAYER_B_WALLET || 'Bm3R...pX9k')}
+                    {shortWallet(process.env.VITE_DEMO_PLAYER_B_WALLET || 'DySrPQQoRBGzMJ7guxttLgPz5wkzCMS6CstpXARqy1c9')}
                   </div>
                   <div className="text-sm text-emerald-600 mt-2 font-semibold">0.05 SOL staked</div>
                 </div>
@@ -211,10 +211,10 @@ export default function DemoPage() {
             <div className="bg-white border border-slate-200 rounded-2xl p-8">
               {animationStep === 0 && status === 'ready' && (
                 <div className="text-center py-8">
-                  <div className="text-lg font-semibold text-slate-700 mb-2">Ready for demo</div>
-                  <div className="text-sm text-slate-600">
+                  <div className="text-lg font-semibold text-slate-700 mb-2">Ready for Payout</div>
+                  {/* <div className="text-sm text-slate-600">
                     Trigger settlement via Postman with POST /api/demo/trigger-duel-win
-                  </div>
+                  </div> */}
                 </div>
               )}
 
