@@ -1,5 +1,5 @@
 import * as anchor from '@coral-xyz/anchor';
-import { erConnection, getAuthorityKeypair } from '../config/solana.js';
+import { baseConnection, erConnection, getAuthorityKeypair } from '../config/solana.js';
 import { supabase } from '../config/supabase.js';
 
 const DUEL_PROGRAM_ID = process.env.DUEL_PROGRAM_ID || 'CbcMMMUwUN81hWiNkxcwNiatL6G8ghuBGVTBkJVgQYSx';
@@ -8,62 +8,6 @@ const DUEL_ESCROW_SEED = Buffer.from('duel_escrow');
 
 let duelIdl = null;
 
-const getDuelProgram = async () => {
-  if (!duelIdl) {
-    try {
-      const response = await fetch(
-        `https://api.devnet.solana.com/?id=1`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getProgramAccounts',
-            params: [DUEL_PROGRAM_ID, { dataSlice: { offset: 0, length: 0 } }],
-          }),
-        }
-      );
-
-      // Fallback IDL structure for duel program
-      duelIdl = {
-        version: '0.1.0',
-        name: 'crypnight_duel',
-        instructions: [
-          {
-            name: 'settleDuel',
-            accounts: [],
-            args: [{ name: 'winner', type: 'publicKey' }],
-          },
-          {
-            name: 'refundDuel',
-            accounts: [],
-            args: [],
-          },
-          {
-            name: 'forfeitDuel',
-            accounts: [],
-            args: [{ name: 'forfeitingPlayer', type: 'publicKey' }],
-          },
-        ],
-      };
-    } catch (err) {
-      console.warn('Could not fetch IDL, using fallback:', err.message);
-      duelIdl = {
-        version: '0.1.0',
-        name: 'crypnight_duel',
-        instructions: [],
-      };
-    }
-  }
-
-  const program = new anchor.Program(
-    duelIdl,
-    DUEL_PROGRAM_ID,
-    { connection: erConnection, wallet: { publicKey: getAuthorityKeypair().publicKey() } }
-  );
-  return program;
-};
 
 // Derive duel treasury PDA
 const getDuelTreasuryPda = () => {
@@ -84,36 +28,23 @@ const getDuelEscrowPda = (matchId) => {
   return pda;
 };
 
-export const settleDuel = async ({ matchId, winnerWallet, session }) => {
+export const settleDuel = async (matchId, state, winnerWallet) => {
   try {
     const authority = getAuthorityKeypair();
-    const program = await getDuelProgram();
 
-    const escrowPda = getDuelEscrowPda(matchId);
-    const treasuryPda = getDuelTreasuryPda();
-
-    // Manually construct the instruction since we don't have full IDL
+    // For demo: use baseConnection (regular devnet) instead of ER for testing
+    // In production, this would route through the contract on Magic Block ER
     const instruction = anchor.web3.SystemProgram.transfer({
-      fromPubkey: authority.publicKey(),
+      fromPubkey: authority.publicKey,
       toPubkey: new anchor.web3.PublicKey(winnerWallet),
-      lamports: 1, // Placeholder — actual settlement happens in contract
+      lamports: Math.floor(0.08 * anchor.web3.LAMPORTS_PER_SOL), // 80% of 0.10 SOL
     });
 
     const tx = new anchor.web3.Transaction().add(instruction);
+    const signature = await baseConnection.sendTransaction(tx, [authority]);
+    await baseConnection.confirmTransaction(signature, 'confirmed');
 
-    const signature = await erConnection.sendTransaction(tx, [authority]);
-    await erConnection.confirmTransaction(signature, 'confirmed');
-
-    // Log to database
-    await supabase
-      .from('duel_sessions')
-      .update({
-        settlement_tx_signature: signature,
-        status: 'settled',
-      })
-      .eq('id', session.id);
-
-    return { signature, status: 'settled' };
+    return { signature, tx: signature };
   } catch (error) {
     console.error('Settlement error:', error);
     throw error;

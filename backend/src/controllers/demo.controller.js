@@ -29,6 +29,7 @@ export const triggerDuelWin = async (req, res) => {
     return res.status(409).json({ error: 'Settlement already in progress' });
   }
 
+  // Auto-reset for new trigger
   demoState = {
     status: 'settling',
     winnerWallet,
