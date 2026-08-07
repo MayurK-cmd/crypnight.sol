@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { DuelManager } from './duelManager.js';
+import { DuelManager, puzzleState } from './duelManager.js';
 import { supabase } from '../config/supabase.js';
 import { settleDuel, refundDuel, forfeitDuel } from './duelPayoutService.js';
 import { getPuzzleByRating } from './puzzleLoader.js';
@@ -19,6 +19,7 @@ const messageHandlers = {
   'queue:join': handleQueueJoin,
   'queue:leave': handleQueueLeave,
   'deposit:confirm': handleDepositConfirm,
+  'duel:start': handleStartDuel,
   'move:submit': handleMoveSubmit,
   'reconnect': handleReconnect,
 };
@@ -71,22 +72,54 @@ async function handleQueueJoin(ws, data) {
 
       ws.sessionId = sessionData.id;
 
-      // Notify both players that match was found
-      const matchMessage = JSON.stringify({
-        type: 'match:found',
-        sessionId: sessionData.id,
-        tier,
-        stake_sol: sessionData.stake_sol,
-        depositTimeoutSeconds: 30,
-      });
-
-      // Send to both players if they're connected
-      ws.send(matchMessage);
-
+      // Fetch opponent details
       const otherPlayerId = userId === match.playerAId ? match.playerBId : match.playerAId;
+      const { data: opponentData } = await supabase
+        .from('users')
+        .select('id, username, rating')
+        .eq('id', otherPlayerId)
+        .single();
+
+      const playerRole = userId === match.playerAId ? 'player_a' : 'player_b';
+
+      // Notify both players that match was found
+      const matchMessage = {
+        type: 'match:found',
+        matchId: sessionData.id,
+        tier,
+        stakeSol: sessionData.stake_sol,
+        opponent: opponentData || { username: 'Opponent', rating: 1500 },
+        yourWallet: data.yourWallet || '',
+        role: playerRole,
+      };
+
+      // Send to current player
+      ws.send(JSON.stringify(matchMessage));
+
+      // Send to other player
       const otherPlayerWs = userSockets.get(otherPlayerId);
       if (otherPlayerWs && otherPlayerWs.readyState === WebSocket.OPEN) {
-        otherPlayerWs.send(matchMessage);
+        otherPlayerWs.sessionId = sessionData.id;
+        otherPlayerWs.playerAId = match.playerAId;
+        otherPlayerWs.playerBId = match.playerBId;
+
+        const otherPlayerRole = otherPlayerId === match.playerAId ? 'player_a' : 'player_b';
+        const { data: currentPlayerData } = await supabase
+          .from('users')
+          .select('id, username, rating')
+          .eq('id', userId)
+          .single();
+
+        const otherMatchMessage = {
+          type: 'match:found',
+          matchId: sessionData.id,
+          tier,
+          stakeSol: sessionData.stake_sol,
+          opponent: currentPlayerData || { username: 'Opponent', rating: 1500 },
+          yourWallet: data.yourWallet || '',
+          role: otherPlayerRole,
+        };
+        otherPlayerWs.send(JSON.stringify(otherMatchMessage));
       }
     } else {
       ws.send(JSON.stringify({
@@ -107,91 +140,351 @@ async function handleQueueLeave(ws, data) {
 }
 
 async function handleDepositConfirm(ws, data) {
-  const { sessionId, txSignature } = data;
+  const { matchId, txSignature } = data;
 
   try {
     const { data: session } = await supabase
       .from('duel_sessions')
       .select('*')
-      .eq('id', sessionId)
+      .eq('id', matchId)
       .single();
 
     if (!session) throw new Error('Session not found');
 
-    // Mark both players as ready when both confirm
-    const result = await DuelManager.confirmDeposit(sessionId, ws.userId);
+    const otherPlayerId = session.player_a_id === ws.userId ? session.player_b_id : session.player_a_id;
+    const playerColumn = session.player_a_id === ws.userId ? 'player_a_deposited' : 'player_b_deposited';
 
-    if (result === 'active') {
-      // Load puzzle for this duel session (one puzzle for both players)
-      const [minRating, maxRating] = TIER_RATING_BANDS[session.tier];
-      const puzzle = await getPuzzleByRating(minRating, maxRating);
+    // Mark this player as deposited
+    await supabase
+      .from('duel_sessions')
+      .update({ [playerColumn]: true })
+      .eq('id', matchId);
 
-      if (!puzzle) throw new Error('Failed to load puzzle');
+    // Check if both players have deposited
+    const { data: updatedSession } = await supabase
+      .from('duel_sessions')
+      .select('player_a_deposited, player_b_deposited')
+      .eq('id', matchId)
+      .single();
 
-      // Store puzzle in duel session
-      await supabase
-        .from('duel_sessions')
-        .update({
-          current_puzzle_id: puzzle.puzzle_id || puzzle.PuzzleId,
-          current_puzzle_fen: puzzle.fen || puzzle.FEN,
-        })
-        .eq('id', sessionId);
+    if (updatedSession.player_a_deposited && updatedSession.player_b_deposited) {
+      // Both deposited — notify both players they can start the game
+      const readyMessage = JSON.stringify({
+        type: 'both:deposited',
+        matchId,
+        message: 'Both players have confirmed. Click "Start Duel" to begin.',
+      });
 
-      // Send puzzle to both players
-      const startPayload = {
-        type: 'duel:start',
-        sessionId,
-        puzzle: {
-          puzzle_id: puzzle.puzzle_id || puzzle.PuzzleId,
-          fen: puzzle.fen || puzzle.FEN,
-          rating: puzzle.rating || puzzle.Rating,
-        },
-        timerSeconds: 180,
-        timestamp: Date.now(),
-      };
+      ws.send(readyMessage);
 
-      ws.send(JSON.stringify(startPayload));
-
-      // Send to other player if connected
-      const otherPlayerId = session.player_a_id === ws.userId ? session.player_b_id : session.player_a_id;
       const otherPlayerWs = userSockets.get(otherPlayerId);
       if (otherPlayerWs && otherPlayerWs.readyState === WebSocket.OPEN) {
-        otherPlayerWs.send(JSON.stringify(startPayload));
+        otherPlayerWs.send(readyMessage);
       }
     } else {
+      // Still waiting for other player
       ws.send(JSON.stringify({
         type: 'deposit:confirmed',
-        waiting: true,
+        matchId,
+        message: 'Your deposit confirmed. Waiting for opponent...',
       }));
+
+      const otherPlayerWs = userSockets.get(otherPlayerId);
+      if (otherPlayerWs && otherPlayerWs.readyState === WebSocket.OPEN) {
+        otherPlayerWs.send(JSON.stringify({
+          type: 'opponent:deposited',
+          matchId,
+          message: 'Opponent has confirmed their deposit.',
+        }));
+      }
     }
   } catch (error) {
+    console.error('[duelSocket] Deposit confirm error:', error);
+    ws.send(JSON.stringify({ type: 'error', message: error.message }));
+  }
+}
+
+async function handleStartDuel(ws, data) {
+  const { matchId } = data;
+
+  try {
+    console.log('[handleStartDuel] Starting duel for matchId:', matchId);
+
+    const { data: session } = await supabase
+      .from('duel_sessions')
+      .select('*')
+      .eq('id', matchId)
+      .single();
+
+    console.log('[handleStartDuel] Session found:', session?.id, 'status:', session?.status);
+
+    if (!session) throw new Error('Session not found');
+    if (!session.player_a_deposited || !session.player_b_deposited) throw new Error('Both players must deposit first');
+
+    // Load puzzle
+    console.log('[handleStartDuel] Loading puzzle for tier:', session.tier);
+    const [minRating, maxRating] = TIER_RATING_BANDS[session.tier];
+    console.log('[handleStartDuel] Rating range:', minRating, '-', maxRating);
+
+    const puzzle = await getPuzzleByRating(minRating, maxRating);
+
+    if (!puzzle) throw new Error('Failed to load puzzle');
+    console.log('[handleStartDuel] Puzzle loaded:', puzzle.puzzle_id || puzzle.PuzzleId);
+
+    // Extract solution moves
+    const solutionMoves = puzzle.Moves ? puzzle.Moves.split(' ') : [];
+    console.log('[handleStartDuel] Solution has', solutionMoves.length, 'moves');
+
+    // Store puzzle state in memory with per-player tracking
+    puzzleState.set(matchId, {
+      playerAPuzzle: {
+        fen: puzzle.fen || puzzle.FEN,
+        solution: solutionMoves,
+        solutionIndex: 0,
+      },
+      playerBPuzzle: {
+        fen: puzzle.fen || puzzle.FEN,
+        solution: solutionMoves,
+        solutionIndex: 0,
+      },
+      playerALives: 3,
+      playerBLives: 3,
+    });
+
+    // Store puzzle and update status in session
+    console.log('[handleStartDuel] Updating session status to active');
+    const { error: updateError } = await supabase
+      .from('duel_sessions')
+      .update({
+        status: 'active',
+        current_puzzle_id: puzzle.puzzle_id || puzzle.PuzzleId,
+        current_puzzle_fen: puzzle.fen || puzzle.FEN,
+        started_at: new Date().toISOString(),
+      })
+      .eq('id', matchId);
+
+    if (updateError) {
+      console.error('[handleStartDuel] Update error:', updateError);
+      throw new Error('Failed to update session: ' + updateError.message);
+    }
+
+    console.log('[handleStartDuel] Session updated successfully, sending puzzle to players');
+
+    // Send puzzle to both players
+    const startPayload = JSON.stringify({
+      type: 'duel:start',
+      matchId,
+      puzzle: {
+        puzzle_id: puzzle.puzzle_id || puzzle.PuzzleId,
+        fen: puzzle.fen || puzzle.FEN,
+        rating: puzzle.rating || puzzle.Rating,
+      },
+      durationMs: 180000,
+      startedAt: Date.now(),
+    });
+
+    ws.send(startPayload);
+
+    const otherPlayerId = session.player_a_id === ws.userId ? session.player_b_id : session.player_a_id;
+    const otherPlayerWs = userSockets.get(otherPlayerId);
+    if (otherPlayerWs && otherPlayerWs.readyState === WebSocket.OPEN) {
+      otherPlayerWs.send(startPayload);
+    }
+    console.log('[handleStartDuel] Duel started successfully');
+  } catch (error) {
+    console.error('[handleStartDuel] Error:', error.message);
     ws.send(JSON.stringify({ type: 'error', message: error.message }));
   }
 }
 
 async function handleMoveSubmit(ws, data) {
-  const { sessionId, move } = data;
+  const { matchId, move } = data;
 
   try {
     const { data: session } = await supabase
       .from('duel_sessions')
       .select('*')
-      .eq('id', sessionId)
+      .eq('id', matchId)
       .single();
 
     if (!session || session.status !== 'active') throw new Error('Duel not active');
 
-    const result = await DuelManager.submitMove(sessionId, ws.userId, move);
+    const puzState = puzzleState.get(matchId);
+    if (!puzState) throw new Error('Puzzle state not found');
 
-    if (result.result === 'failed') {
-      // Puzzle failed — notify both players
+    const isPlayerA = session.player_a_id === ws.userId;
+    const playerPuzzle = isPlayerA ? puzState.playerAPuzzle : puzState.playerBPuzzle;
+    const expectedMove = playerPuzzle.solution[playerPuzzle.solutionIndex];
+
+    // Wrong move
+    if (!expectedMove || move !== expectedMove) {
+      const playerColumn = isPlayerA ? 'player_a_puzzles_failed' : 'player_b_puzzles_failed';
+      const failedCount = session[playerColumn] || 0;
+      const newFailedCount = failedCount + 1;
+
+      // Decrement lives
+      if (isPlayerA) {
+        puzState.playerALives -= 1;
+      } else {
+        puzState.playerBLives -= 1;
+      }
+
+      const livesRemaining = isPlayerA ? puzState.playerALives : puzState.playerBLives;
+
+      await supabase
+        .from('duel_sessions')
+        .update({ [playerColumn]: newFailedCount })
+        .eq('id', matchId);
+
       ws.send(JSON.stringify({
         type: 'puzzle:failed',
+        matchId,
+        livesRemaining,
       }));
-    } else if (result.result === 'continue') {
-      ws.send(JSON.stringify({ type: 'move:valid' }));
+
+      const otherPlayerId = isPlayerA ? session.player_b_id : session.player_a_id;
+      const otherPlayerWs = userSockets.get(otherPlayerId);
+      if (otherPlayerWs && otherPlayerWs.readyState === WebSocket.OPEN) {
+        otherPlayerWs.send(JSON.stringify({
+          type: 'opponent:failed_puzzle',
+          matchId,
+          opponentLivesRemaining: livesRemaining,
+        }));
+      }
+
+      // If lives exhausted, end match for this player
+      if (livesRemaining <= 0) {
+        ws.send(JSON.stringify({
+          type: 'duel:out_of_lives',
+          matchId,
+        }));
+
+        const otherPlayerId = isPlayerA ? session.player_b_id : session.player_a_id;
+        const otherPlayerWs = userSockets.get(otherPlayerId);
+        if (otherPlayerWs && otherPlayerWs.readyState === WebSocket.OPEN) {
+          otherPlayerWs.send(JSON.stringify({
+            type: 'opponent:out_of_lives',
+            matchId,
+          }));
+        }
+        return;
+      }
+
+      // Load next puzzle for this player only
+      const [minRating, maxRating] = TIER_RATING_BANDS[session.tier];
+      const nextPuzzle = await getPuzzleByRating(minRating, maxRating);
+
+      if (nextPuzzle) {
+        const nextSolution = nextPuzzle.Moves ? nextPuzzle.Moves.split(' ') : [];
+        if (isPlayerA) {
+          puzState.playerAPuzzle = {
+            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            solution: nextSolution,
+            solutionIndex: 0,
+          };
+        } else {
+          puzState.playerBPuzzle = {
+            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            solution: nextSolution,
+            solutionIndex: 0,
+          };
+        }
+
+        ws.send(JSON.stringify({
+          type: 'duel:new_puzzle',
+          matchId,
+          puzzle: {
+            puzzle_id: nextPuzzle.puzzle_id || nextPuzzle.PuzzleId,
+            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            rating: nextPuzzle.rating || nextPuzzle.Rating,
+          },
+        }));
+      }
+      return;
+    }
+
+    // Correct move
+    const nextIndex = playerPuzzle.solutionIndex + 1;
+    const puzzleSolved = nextIndex >= playerPuzzle.solution.length;
+
+    if (puzzleSolved) {
+      // Puzzle solved
+      const playerColumn = isPlayerA ? 'player_a_puzzles_solved' : 'player_b_puzzles_solved';
+      const solvedCount = session[playerColumn] || 0;
+
+      await supabase
+        .from('duel_sessions')
+        .update({ [playerColumn]: solvedCount + 1 })
+        .eq('id', matchId);
+
+      ws.send(JSON.stringify({
+        type: 'puzzle:solved',
+        matchId,
+      }));
+
+      const otherPlayerId = isPlayerA ? session.player_b_id : session.player_a_id;
+      const otherPlayerWs = userSockets.get(otherPlayerId);
+      if (otherPlayerWs && otherPlayerWs.readyState === WebSocket.OPEN) {
+        otherPlayerWs.send(JSON.stringify({
+          type: 'opponent:solved_puzzle',
+          matchId,
+        }));
+      }
+
+      // Load next puzzle for this player
+      const [minRating, maxRating] = TIER_RATING_BANDS[session.tier];
+      const nextPuzzle = await getPuzzleByRating(minRating, maxRating);
+
+      if (nextPuzzle) {
+        const nextSolution = nextPuzzle.Moves ? nextPuzzle.Moves.split(' ') : [];
+        if (isPlayerA) {
+          puzState.playerAPuzzle = {
+            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            solution: nextSolution,
+            solutionIndex: 0,
+          };
+        } else {
+          puzState.playerBPuzzle = {
+            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            solution: nextSolution,
+            solutionIndex: 0,
+          };
+        }
+
+        ws.send(JSON.stringify({
+          type: 'duel:new_puzzle',
+          matchId,
+          puzzle: {
+            puzzle_id: nextPuzzle.puzzle_id || nextPuzzle.PuzzleId,
+            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            rating: nextPuzzle.rating || nextPuzzle.Rating,
+          },
+        }));
+      }
+    } else {
+      // Valid move, puzzle continues
+      playerPuzzle.solutionIndex = nextIndex;
+      const nextMove = playerPuzzle.solution[nextIndex];
+
+      ws.send(JSON.stringify({
+        type: 'move:valid',
+        matchId,
+        opponentMove: nextMove,
+      }));
+
+      const otherPlayerId = isPlayerA ? session.player_b_id : session.player_a_id;
+      const otherPlayerWs = userSockets.get(otherPlayerId);
+      if (otherPlayerWs && otherPlayerWs.readyState === WebSocket.OPEN) {
+        otherPlayerWs.send(JSON.stringify({
+          type: 'opponent:moved',
+          matchId,
+          move,
+          opponentMove: nextMove,
+        }));
+      }
     }
   } catch (error) {
+    console.error('[duelSocket] Move submit error:', error);
     ws.send(JSON.stringify({ type: 'error', message: error.message }));
   }
 }

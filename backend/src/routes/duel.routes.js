@@ -9,6 +9,9 @@ router.get('/session/:matchId', duelController.getDuelSession);
 // Get queue status for a tier
 router.get('/queue/:tier', duelController.getQueueStatus);
 
+// Settle a completed duel match
+router.post('/settle', duelController.settleDuelMatch);
+
 // Initialize duel treasury (admin only)
 router.post('/admin/initialize-treasury', duelController.initializeTreasury);
 

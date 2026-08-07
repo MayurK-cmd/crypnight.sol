@@ -1,29 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Chess } from 'chess.js';
-import { Chessboard } from 'react-chessboard';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { Connection, PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
-import API from '../../api/axios';
-import { useDuelWebSocket } from '../../hooks/useDuelWebSocket';
+import { useEffect, useRef, useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
+import { Chess } from "chess.js";
+import { Chessboard } from "react-chessboard";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { Connection, PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
+import API from "../../api/axios";
+import { AuthContext } from "../../context/AuthContext";
+import { useDuelSocket } from "../../hooks/useDuelSocket";
 import {
   Timer,
   Trophy,
-  Users,
-  CheckCircle2,
   XCircle,
-  Loader,
-  Wallet,
-  Gamepad2,
-} from 'lucide-react';
+  Swords,
+  ArrowLeft,
+  CheckCircle2,
+  TrendingUp,
+  TrendingDown,
+  RotateCcw,
+  Coins,
+} from "lucide-react";
 
-const TIERS = ['beginner', 'intermediate', 'pro', 'gm'];
 const TIER_LABELS = {
-  beginner: 'Beginner (0.05 SOL)',
-  intermediate: 'Intermediate (0.10 SOL)',
-  pro: 'Pro (0.25 SOL)',
-  gm: 'Grandmaster (0.50 SOL)',
+  beginner: "Beginner (0.05 SOL)",
+  intermediate: "Intermediate (0.10 SOL)",
+  pro: "Pro (0.25 SOL)",
+  gm: "Grandmaster (0.50 SOL)",
 };
 
 const STAKE_LAMPORTS = {
@@ -35,195 +36,319 @@ const STAKE_LAMPORTS = {
 
 export default function Duel() {
   const navigate = useNavigate();
-  const { connected, send, onMessage } = useDuelWebSocket();
-  const { publicKey, sendTransaction, connected: walletConnected } = useWallet();
-  const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+  const { user } = useContext(AuthContext);
+  const { publicKey, sendTransaction } = useWallet();
 
-  const [state, setState] = useState('idle');
-  const [selectedTier, setSelectedTier] = useState('beginner');
-  const [sessionId, setSessionId] = useState(null);
-  const [puzzle, setPuzzle] = useState(null);
-  const [depositTimeoutSeconds, setDepositTimeoutSeconds] = useState(30);
-  const [timerSeconds, setTimerSeconds] = useState(180);
-  const [puzzlesSolvedPlayer, setPuzzlesSolvedPlayer] = useState(0);
-  const [puzzlesSolvedOpponent, setPuzzlesSolvedOpponent] = useState(0);
-  const [puzzlesFailedPlayer, setPuzzlesFailedPlayer] = useState(0);
-  const [puzzlesFailedOpponent, setPuzzlesFailedOpponent] = useState(0);
-  const [stakeAmount, setStakeAmount] = useState(0.05);
-  const [loading, setLoading] = useState(false);
+  // State machine: 'tier_select' | 'queuing' | 'match_found' | 'waiting_both' | 'game' | 'ended'
+  const [state, setState] = useState("tier_select");
+  const [selectedTier, setSelectedTier] = useState("beginner");
+  const [matchId, setMatchId] = useState(null);
+  const [opponent, setOpponent] = useState(null);
+  const [playerRole, setPlayerRole] = useState(null); // 'player_a' or 'player_b'
+  const [opponentDeposited, setOpponentDeposited] = useState(false);
+  const [playerDeposited, setPlayerDeposited] = useState(false);
+  const [bothDeposited, setBothDeposited] = useState(false);
+  const [gameState, setGameState] = useState(null);
 
+  // Chess state
   const chessRef = useRef(new Chess());
-  const [position, setPosition] = useState('');
-  const [playerColor, setPlayerColor] = useState('white');
-  const [moveFrom, setMoveFrom] = useState('');
+  const [position, setPosition] = useState("");
+  const [puzzle, setPuzzle] = useState(null);
+  const [moveFrom, setMoveFrom] = useState("");
   const [optionSquares, setOptionSquares] = useState({});
   const [lastMoveSquares, setLastMoveSquares] = useState({});
+  const [playerColor, setPlayerColor] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [timer, setTimer] = useState(180);
 
-  const depositTimerRef = useRef(null);
-  const gameTimerRef = useRef(null);
+  // Game progress
+  const [puzzlesSolved, setPuzzlesSolved] = useState(0);
+  const [puzzlesFailed, setPuzzlesFailed] = useState(0);
+  const [opponentPuzzlesSolved, setOpponentPuzzlesSolved] = useState(0);
+  const [opponentPuzzlesFailed, setOpponentPuzzlesFailed] = useState(0);
+  const [playerLives, setPlayerLives] = useState(3);
+  const [opponentLives, setOpponentLives] = useState(3);
+  const [sessionComplete, setSessionComplete] = useState(false);
+  const [result, setResult] = useState(null);
+  const [txSignature, setTxSignature] = useState(null);
 
-  useEffect(() => {
-    const handlePageHide = () => {
-      if (depositTimerRef.current) clearInterval(depositTimerRef.current);
-      if (gameTimerRef.current) clearInterval(gameTimerRef.current);
-    };
+  const currentTurn =
+    position && position.split(" ")[1] === "w" ? "White" : "Black";
 
-    window.addEventListener('pagehide', handlePageHide);
-    return () => window.removeEventListener('pagehide', handlePageHide);
-  }, []);
+  const { socket, joinQueue, confirmDeposit, startDuel, submitMove, onMatchFound, onDuelStart, onNewPuzzle, onPuzzleSolved, onPuzzleFailed, onOpponentReply, onDuelEnded } = useDuelSocket();
 
-  useEffect(() => {
-    onMessage('match:found', (data) => {
-      setSessionId(data.sessionId);
-      setStakeAmount(data.stake_sol);
-      setDepositTimeoutSeconds(data.depositTimeoutSeconds);
-      setState('match_found');
-
-      let countdown = data.depositTimeoutSeconds;
-      depositTimerRef.current = setInterval(() => {
-        countdown--;
-        setDepositTimeoutSeconds(countdown);
-        if (countdown <= 0) {
-          clearInterval(depositTimerRef.current);
-          setState('idle');
-        }
-      }, 1000);
-    });
-
-    onMessage('duel:start', async (data) => {
-      setLoading(true);
-      setMoveFrom("");
-      setOptionSquares({});
-      setLastMoveSquares({});
-
-      try {
-        // Puzzle is sent from backend — both players get the same one
-        const fetchedPuzzle = data.puzzle;
-
-        if (!fetchedPuzzle || !fetchedPuzzle.fen) {
-          console.error('[duel:start] No puzzle in message:', data);
-          throw new Error('Puzzle not provided by server');
-        }
-
-        console.log('[duel:start] Puzzle loaded:', { puzzle_id: fetchedPuzzle.puzzle_id, fen: fetchedPuzzle.fen });
-
-        setSessionId(data.sessionId);
-        setPuzzle(fetchedPuzzle);
-
-        const game = new Chess(fetchedPuzzle.fen);
-        chessRef.current = game;
-        const fenToSet = game.fen();
-        console.log('[duel:start] Setting position:', fenToSet);
-        setPosition(fenToSet);
-
-        // Set player color from FEN
-        const activeColor = fetchedPuzzle.fen.split(' ')[1];
-        setPlayerColor(activeColor === 'w' ? 'white' : 'black');
-
-        setPuzzlesSolvedPlayer(0);
-        setPuzzlesSolvedOpponent(0);
-        setPuzzlesFailedPlayer(0);
-        setPuzzlesFailedOpponent(0);
-
-        setState('active');
-        setTimerSeconds(180);
-        setLoading(false);
-
-        let countdown = 180;
-        gameTimerRef.current = setInterval(() => {
-          countdown--;
-          setTimerSeconds(countdown);
-          if (countdown <= 0) {
-            clearInterval(gameTimerRef.current);
-            setState('ended');
-          }
-        }, 1000);
-      } catch (err) {
-        console.error('[duel:start] Failed to load puzzle:', err);
-        setLoading(false);
-        setState('idle');
-      }
-    });
-
-    onMessage('puzzle:failed', () => {
-      setPuzzlesFailedPlayer(p => p + 1);
-    });
-
-    onMessage('opponent:puzzleFailed', () => {
-      setPuzzlesFailedOpponent(p => p + 1);
-    });
-
-    onMessage('move:valid', () => {});
-
-    onMessage('error', (data) => {
-      console.error('Duel error:', data.message);
-      setLoading(false);
-    });
-
-    return () => {
-      clearInterval(depositTimerRef.current);
-      clearInterval(gameTimerRef.current);
-    };
-  }, [onMessage]);
-
-  const handleJoinQueue = (tier) => {
-    if (!walletConnected || !publicKey) {
-      alert('Please connect your Phantom wallet first');
-      return;
-    }
-
+  // Tier selection
+  const handleTierSelect = (tier) => {
     setSelectedTier(tier);
-    setState('queuing');
-    send('queue:join', {
-      tier,
-    });
+    setState("queuing");
+    joinQueue(tier);
   };
 
-  const handleConfirmDeposit = async () => {
-    if (!publicKey || !sendTransaction) {
-      alert('Wallet not connected');
-      return;
-    }
+  // Match found listener
+  useEffect(() => {
+    if (!socket) return;
 
-    setLoading(true);
+    const handleMatchFound = ({ matchId: mid, tier, stakeSol, opponent: opp, yourWallet, role }) => {
+      setMatchId(mid);
+      setOpponent(opp);
+      setPlayerRole(role);
+      setState("match_found");
+    };
+
+    onMatchFound(handleMatchFound);
+  }, [socket, onMatchFound]);
+
+  // Opponent deposit listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleOpponentReply = (data) => {
+      if (data.type === 'both:deposited') {
+        setOpponentDeposited(true);
+        setBothDeposited(true);
+      } else if (data.type === 'opponent:deposited') {
+        setOpponentDeposited(true);
+      }
+    };
+
+    onOpponentReply(handleOpponentReply);
+  }, [socket, onOpponentReply]);
+
+  // Start duel handler
+  const handleStartDuel = () => {
+    if (!matchId) return;
+    startDuel(matchId);
+  };
+
+  // Confirm & Stake
+  const handleConfirmStake = async () => {
+    if (!publicKey || !matchId) return;
+
     try {
+      setState("waiting_both");
+      const escrowPda = import.meta.env.VITE_DUEL_ESCROW_PDA;
+
+      const connection = new Connection("https://api.devnet.solana.com", "confirmed");
       const stakeLamports = STAKE_LAMPORTS[selectedTier];
 
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey('EzkHbrB8bTWPVevB9X1AySwt2fAtjqEnZkAnihjZfcEc'),
-          lamports: stakeLamports,
-        })
+      const txSig = await sendTransaction(
+        new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(escrowPda),
+            lamports: stakeLamports,
+          })
+        ),
+        connection
       );
 
-      const signature = await sendTransaction(transaction, connection);
-      await connection.confirmTransaction(signature, 'confirmed');
-
-      send('deposit:confirm', {
-        sessionId,
-        txSignature: signature,
-      });
-      setState('waiting_deposits');
-    } catch (error) {
-      console.error('Deposit error:', error);
-      alert('Failed to confirm deposit: ' + error.message);
-    } finally {
-      setLoading(false);
+      await connection.confirmTransaction(txSig, "confirmed");
+      setPlayerDeposited(true);
+      confirmDeposit(matchId, txSig);
+    } catch (err) {
+      setState("match_found");
     }
+  };
+
+  // Duel start listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleDuelStart = ({ puzzle: puz, durationMs, startedAt }) => {
+      setState("game");
+      initializeGame(puz);
+      setTimer(Math.ceil(durationMs / 1000));
+    };
+
+    onDuelStart(handleDuelStart);
+  }, [socket, onDuelStart]);
+
+  // Puzzle solved listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handlePuzzleSolved = ({ matchId: mid }) => {
+      if (mid !== matchId) return;
+      setPuzzlesSolved(prev => prev + 1);
+    };
+
+    onPuzzleSolved(handlePuzzleSolved);
+  }, [socket, onPuzzleSolved, matchId]);
+
+  // Puzzle failed listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handlePuzzleFailed = ({ matchId: mid, livesRemaining }) => {
+      if (mid !== matchId) return;
+      setPuzzlesFailed(prev => prev + 1);
+      setPlayerLives(livesRemaining);
+    };
+
+    onPuzzleFailed(handlePuzzleFailed);
+  }, [socket, onPuzzleFailed, matchId]);
+
+  // New puzzle listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewPuzzle = ({ matchId: mid, puzzle: puz }) => {
+      if (mid !== matchId) return;
+      initializeGame(puz);
+    };
+
+    onNewPuzzle(handleNewPuzzle);
+  }, [socket, onNewPuzzle, matchId]);
+
+  // Progress listener for opponent moves
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleOpponentMove = (data) => {
+      if (data.type === 'opponent:solved_puzzle') {
+        setOpponentPuzzlesSolved(prev => prev + 1);
+      } else if (data.type === 'opponent:failed_puzzle') {
+        setOpponentPuzzlesFailed(prev => prev + 1);
+        if (data.opponentLivesRemaining !== undefined) {
+          setOpponentLives(data.opponentLivesRemaining);
+        }
+      } else if (data.type === 'opponent:moved' && state === 'game') {
+        const game = chessRef.current;
+
+        // Auto-play opponent's move
+        if (data.move) {
+          const oppFrom = data.move.slice(0, 2);
+          const oppTo = data.move.slice(2, 4);
+          game.move({ from: oppFrom, to: oppTo, promotion: data.move[4] || 'q' });
+          setPosition(game.fen());
+          setLastMoveSquares({
+            [oppFrom]: { background: 'rgba(255, 200, 87, 0.5)' },
+            [oppTo]: { background: 'rgba(255, 152, 0, 0.6)' },
+          });
+        }
+
+        // Auto-play next move in solution (opponent's auto-move)
+        if (data.opponentMove) {
+          const autoFrom = data.opponentMove.slice(0, 2);
+          const autoTo = data.opponentMove.slice(2, 4);
+          game.move({ from: autoFrom, to: autoTo, promotion: data.opponentMove[4] || 'q' });
+          setPosition(game.fen());
+        }
+      } else if (data.type === 'duel:out_of_lives') {
+        // Opponent ran out of lives
+        setOpponentLives(0);
+      } else if (data.type === 'opponent:out_of_lives') {
+        // Opponent is out of lives, we win
+        setSessionComplete(true);
+        setResult({
+          reason: 'opponent_out_of_lives',
+          isDraw: false,
+          winnerId: user?.id,
+          playerASolved: puzzlesSolved,
+          playerBSolved: opponentPuzzlesSolved,
+        });
+        setState("ended");
+
+        // Call settlement endpoint
+        API.post('/duel/settle', {
+          matchId,
+          playerASolved: puzzlesSolved,
+          playerBSolved: opponentPuzzlesSolved,
+        }).catch(() => {
+          // Settlement handled on backend
+        });
+      }
+    };
+
+    onOpponentReply(handleOpponentMove);
+  }, [socket, onOpponentReply, state, matchId]);
+
+  // Game timer
+  useEffect(() => {
+    if (state !== "game" || sessionComplete) return;
+
+    const interval = setInterval(() => {
+      setTimer((prev) => {
+        if (prev <= 1) {
+          // Time's up — determine winner
+          const isDraw = puzzlesSolved === opponentPuzzlesSolved;
+          const winnerId = !isDraw ? (puzzlesSolved > opponentPuzzlesSolved ? user?.id : null) : null;
+
+          setSessionComplete(true);
+          const gameResult = {
+            reason: 'time_expired',
+            isDraw,
+            winnerId,
+            playerASolved: puzzlesSolved,
+            playerBSolved: opponentPuzzlesSolved,
+          };
+          setResult(gameResult);
+          setState("ended");
+
+          // Call settlement endpoint
+          API.post('/duel/settle', {
+            matchId,
+            playerASolved: puzzlesSolved,
+            playerBSolved: opponentPuzzlesSolved,
+          }).catch(() => {
+            // Settlement handled on backend
+          });
+
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [state, sessionComplete, puzzlesSolved, opponentPuzzlesSolved, user?.id, matchId]);
+
+  // Duel ended listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleDuelEnded = ({ reason, isDraw, winnerId, playerA, playerB }) => {
+      setSessionComplete(true);
+      setResult({
+        reason,
+        isDraw,
+        winnerId,
+        playerASolved: playerA?.puzzlesSolved || 0,
+        playerAFailed: playerA?.puzzlesFailed || 0,
+        playerBSolved: playerB?.puzzlesSolved || 0,
+        playerBFailed: playerB?.puzzlesFailed || 0,
+      });
+      setState("ended");
+    };
+
+    onDuelEnded(handleDuelEnded);
+  }, [socket, onDuelEnded]);
+
+  const initializeGame = (puz) => {
+    const game = new Chess(puz.fen);
+    chessRef.current = game;
+    setPosition(game.fen());
+    setPuzzle({
+      puzzle_id: puz.puzzle_id || puz.PuzzleId,
+      fen: puz.fen || puz.FEN,
+      rating: puz.rating || puz.Rating,
+    });
+
+    const activeColor = puz.fen.split(" ")[1];
+    setPlayerColor(activeColor === "w" ? "white" : "black");
+    setLoading(false);
   };
 
   function getMoveOptions(square) {
     const game = chessRef.current;
     const piece = game.get(square);
 
-    if (!piece || (playerColor === 'white' && piece.color !== 'w') || (playerColor === 'black' && piece.color !== 'b')) {
+    if (!piece || (playerColor === "white" && piece.color !== "w") || (playerColor === "black" && piece.color !== "b")) {
       setOptionSquares({});
       return false;
     }
 
     const moves = game.moves({ square, verbose: true });
-
     if (moves.length === 0) {
       setOptionSquares({});
       return false;
@@ -244,11 +369,11 @@ export default function Duel() {
     return true;
   }
 
-  const onSquareClick = ({ square, piece }) => {
-    if (state !== 'active') return;
+  async function onSquareClick({ square }) {
+    if (sessionComplete || playerLives <= 0) return;
     const game = chessRef.current;
 
-    if (!moveFrom && piece) {
+    if (!moveFrom) {
       const hasMoveOptions = getMoveOptions(square);
       if (hasMoveOptions) setMoveFrom(square);
       return;
@@ -264,140 +389,303 @@ export default function Duel() {
     }
 
     setOptionSquares({});
-    const move = game.move({ from: moveFrom, to: square, promotion: "q" });
-    setPosition(game.fen());
-    setLastMoveSquares({
-      [moveFrom]: { background: "rgba(255, 200, 87, 0.5)" },
-      [square]: { background: "rgba(255, 152, 0, 0.6)" },
-    });
-
-    send('move:submit', { sessionId, move: move.san });
+    await handleMove(moveFrom, square);
     setMoveFrom("");
-  };
+  }
 
-  const onPieceDrop = ({ sourceSquare, targetSquare }) => {
-    if (!targetSquare || state !== 'active') return false;
-    setOptionSquares({});
-    setMoveFrom("");
-
+  async function handleMove(from, to) {
+    if (sessionComplete) return false;
     const game = chessRef.current;
-    const move = game.move({ from: sourceSquare, to: targetSquare, promotion: "q" });
 
+    const move = game.move({ from, to, promotion: "q" });
     if (!move) return false;
 
     setPosition(game.fen());
+    setOptionSquares({});
     setLastMoveSquares({
-      [sourceSquare]: { background: "rgba(255, 200, 87, 0.5)" },
-      [targetSquare]: { background: "rgba(255, 152, 0, 0.6)" },
+      [from]: { background: "rgba(255, 200, 87, 0.5)" },
+      [to]: { background: "rgba(255, 152, 0, 0.6)" },
     });
 
-    send('move:submit', { sessionId, move: move.san });
-    return true;
-  };
-
-  if (!connected) {
-    return <div className="p-8 text-center text-slate-400">Connecting to duel server...</div>;
+    try {
+      submitMove(matchId, from + to);
+      return true;
+    } catch (err) {
+      console.error('[Duel] Move submission error:', err);
+      game.undo();
+      setPosition(game.fen());
+      setLastMoveSquares({});
+      return false;
+    }
   }
 
-  return (
-    <div className="min-h-screen bg-white text-slate-900 font-sans p-4 md:p-8 lg:p-12 relative overflow-hidden">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:32px_32px] opacity-40" />
+  async function onPieceDrop({ sourceSquare, targetSquare }) {
+    if (!targetSquare || sessionComplete || playerLives <= 0) return false;
+    setOptionSquares({});
+    setMoveFrom("");
+    return await handleMove(sourceSquare, targetSquare);
+  }
 
-      <div className="max-w-7xl mx-auto">
-        {state === 'idle' && (
-          <div className="max-w-2xl mx-auto">
+  // ===============================
+  // TIER SELECT
+  // ===============================
+  if (state === "tier_select") {
+    return (
+      <div className="min-h-screen bg-white text-slate-900 font-sans p-4 md:p-8 lg:p-12 relative overflow-hidden">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:32px_32px] opacity-40"></div>
+
+        <div className="max-w-2xl mx-auto">
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-2 text-slate-400 hover:text-black font-bold transition-all mb-8 group cursor-pointer"
+          >
+            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+            Back to Dashboard
+          </button>
+
+          <div className="mb-12">
+            <h1 className="text-4xl font-black tracking-tight mb-2">⚔️ Challenge Mode</h1>
+            <p className="text-slate-600">Select your tier and find an opponent</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 md:gap-6">
+            {Object.entries(TIER_LABELS).map(([tier, label]) => (
+              <button
+                key={tier}
+                onClick={() => handleTierSelect(tier)}
+                className="bg-gradient-to-br from-slate-100 to-slate-50 border-2 border-slate-200 hover:border-emerald-500 rounded-2xl p-6 text-left transition-all transform hover:scale-105 cursor-pointer"
+              >
+                <div className="text-xs font-black uppercase tracking-widest text-slate-600 mb-2 capitalize">
+                  {tier}
+                </div>
+                <div className="text-lg font-black text-slate-900">{label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===============================
+  // QUEUING
+  // ===============================
+  if (state === "queuing") {
+    return (
+      <div className="min-h-screen bg-white text-slate-900 font-sans flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 border-4 border-slate-100 border-t-emerald-500 rounded-full animate-spin mb-4"></div>
+        <p className="font-black italic tracking-tighter text-slate-400 uppercase tracking-widest">
+          Finding Opponent...
+        </p>
+      </div>
+    );
+  }
+
+  // ===============================
+  // MATCH FOUND
+  // ===============================
+  if (state === "match_found") {
+    return (
+      <div className="min-h-screen bg-white text-slate-900 font-sans p-4 md:p-8 lg:p-12 relative overflow-hidden">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:32px_32px] opacity-40"></div>
+
+        <div className="max-w-2xl mx-auto">
+          <div className="mb-12">
+            <h1 className="text-4xl font-black tracking-tight mb-2">Match Found!</h1>
+            <p className="text-slate-600">Opponent ready. Confirm your stake to begin.</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200 rounded-3xl p-8 mb-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="text-center">
+                <div className="text-sm text-slate-600 font-bold mb-2">You</div>
+                <div className="text-2xl font-black">{user?.username || "Player"}</div>
+              </div>
+
+              <div className="text-center">
+                <div className="text-4xl">⚔️</div>
+                <div className="text-xs text-slate-600 font-bold mt-2">vs</div>
+              </div>
+
+              <div className="text-center">
+                <div className="text-sm text-slate-600 font-bold mb-2">Opponent</div>
+                <div className="text-2xl font-black">{opponent?.username || "?"}</div>
+                <div className="text-xs text-slate-500 mt-1">{opponent?.rating || 1500} ELO</div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 text-center mb-6">
+              <div className="text-xs text-slate-600 font-bold mb-1">Stake Amount</div>
+              <div className="text-3xl font-black text-emerald-600">{(STAKE_LAMPORTS[selectedTier] / 1e9).toFixed(2)} SOL</div>
+            </div>
+
             <button
-              onClick={() => navigate('/dashboard')}
-              className="flex items-center gap-2 text-slate-400 hover:text-black font-bold transition-all mb-8 cursor-pointer group"
+              onClick={handleConfirmStake}
+              disabled={!publicKey}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-4 rounded-2xl font-black text-lg transition-all cursor-pointer"
             >
-              <span className="group-hover:-translate-x-1 transition-transform">←</span>
-              Back to Dashboard
+              {publicKey ? "Confirm & Stake (Phantom)" : "Connect Wallet"}
             </button>
-            <div className="bg-slate-900 rounded-[2.5rem] p-12 text-white relative overflow-hidden">
-              <div className="relative z-10">
-                <h1 className="text-4xl font-black italic tracking-tighter mb-8">Duel Arena</h1>
-                {!walletConnected && (
-                  <div className="mb-8 p-6 bg-white/5 border border-white/10 rounded-2xl">
-                    <p className="text-slate-300 mb-4 font-medium">Connect your Phantom wallet to play</p>
-                    <WalletMultiButton className="!bg-emerald-400 !text-black !rounded-xl !px-6 !h-10 !font-black hover:!bg-emerald-300 transition-all !shadow-lg" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===============================
+  // WAITING FOR BOTH
+  // ===============================
+  if (state === "waiting_both") {
+    return (
+      <div className="min-h-screen bg-white text-slate-900 font-sans p-4 md:p-8 lg:p-12 relative overflow-hidden">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:32px_32px] opacity-40"></div>
+
+        <div className="max-w-2xl mx-auto">
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-2 text-slate-400 hover:text-black font-bold transition-all mb-8 group cursor-pointer"
+          >
+            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+            Back to Dashboard
+          </button>
+
+          <div className="mb-12">
+            <h1 className="text-4xl font-black tracking-tight mb-2">⚔️ Ready to Duel</h1>
+            <p className="text-slate-600">Both stakes confirmed. Start the match whenever you're ready.</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200 rounded-3xl p-8 mb-8">
+            <div className="flex items-center justify-center gap-4 mb-8">
+              <CheckCircle2 size={32} className="text-emerald-600" />
+              <span className="text-2xl font-black text-emerald-600">Your Deposit Confirmed</span>
+            </div>
+
+            {opponentDeposited && (
+              <div className="flex items-center justify-center gap-4 mb-8">
+                <CheckCircle2 size={32} className="text-emerald-600" />
+                <span className="text-2xl font-black text-emerald-600">Opponent Deposit Confirmed</span>
+              </div>
+            )}
+
+            {!opponentDeposited && (
+              <div className="flex items-center justify-center gap-4 mb-8">
+                <div className="w-8 h-8 border-2 border-slate-300 border-t-emerald-600 rounded-full animate-spin"></div>
+                <span className="text-xl font-bold text-slate-600">Waiting for opponent...</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleStartDuel}
+              disabled={!opponentDeposited}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white py-4 rounded-2xl font-black text-lg transition-all cursor-pointer"
+            >
+              {opponentDeposited ? "🎮 Start Duel" : "Waiting for Opponent..."}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===============================
+  // GAME IN PROGRESS
+  // ===============================
+  if (state === "game" && puzzle) {
+    return (
+      <div className="min-h-screen bg-white text-slate-900 font-sans p-4 md:p-8 lg:p-12 relative overflow-hidden">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:32px_32px] opacity-40"></div>
+
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* LEFT SIDEBAR */}
+          <div className="lg:col-span-3 space-y-6">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="flex items-center gap-2 text-slate-400 hover:text-black font-bold transition-all group cursor-pointer"
+            >
+              <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+              Back
+            </button>
+
+            <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-2xl p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`w-3.5 h-3.5 rounded-full animate-pulse ${
+                  currentTurn === "White"
+                    ? "bg-slate-200 border border-slate-300"
+                    : "bg-black shadow-lg shadow-black/20"
+                }`} />
+                <span className="text-xs font-black uppercase tracking-[0.15em] italic">
+                  {currentTurn} to move
+                </span>
+              </div>
+              <div className="text-xs font-black uppercase tracking-widest text-slate-600 mb-4">Your Progress</div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-slate-700">Solved</span>
+                  <span className="text-lg font-black text-emerald-600">{puzzlesSolved}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-slate-700">Failed</span>
+                  <span className="text-lg font-black text-red-600">{puzzlesFailed}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-slate-300">
+                  <span className="text-sm font-bold text-slate-700">Lives</span>
+                  <div className="flex gap-1">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-4 h-4 rounded-full ${
+                          i < playerLives
+                            ? 'bg-emerald-500'
+                            : 'bg-slate-300'
+                        }`}
+                      />
+                    ))}
                   </div>
-                )}
-                <p className="text-slate-400 mb-8 font-medium">Select a tier to find an opponent</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {TIERS.map(tier => (
-                    <button
-                      key={tier}
-                      onClick={() => handleJoinQueue(tier)}
-                      disabled={!walletConnected}
-                      className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 hover:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold transition-all"
-                    >
-                      {TIER_LABELS[tier]}
-                    </button>
-                  ))}
                 </div>
               </div>
-              <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full"></div>
+            </div>
+
+            <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-2xl p-6">
+              <div className="text-xs font-black uppercase tracking-widest text-slate-600 mb-4">Opponent</div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-slate-700">Solved</span>
+                  <span className="text-lg font-black">{opponentPuzzlesSolved}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-slate-700">Failed</span>
+                  <span className="text-lg font-black">{opponentPuzzlesFailed}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-slate-300">
+                  <span className="text-sm font-bold text-slate-700">Lives</span>
+                  <div className="flex gap-1">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-4 h-4 rounded-full ${
+                          i < opponentLives
+                            ? 'bg-emerald-500'
+                            : 'bg-slate-300'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 text-center">
+              <Timer size={24} className="mx-auto mb-2 text-yellow-600" />
+              <div className="text-xs font-black uppercase tracking-widest text-yellow-700 mb-2">Time Remaining</div>
+              <div className="text-3xl font-black text-yellow-600">{Math.floor(timer / 60)}:{String(timer % 60).padStart(2, "0")}</div>
             </div>
           </div>
-        )}
 
-        {state === 'queuing' && (
-          <div className="max-w-2xl mx-auto bg-slate-50 border border-slate-100 rounded-[2.5rem] p-12 text-center">
-            <Loader className="w-12 h-12 mx-auto mb-4 animate-spin text-emerald-500" />
-            <h2 className="text-2xl font-black mb-4">Finding opponent...</h2>
-            <p className="text-slate-500 mb-8 font-medium">{TIER_LABELS[selectedTier]}</p>
-            <button
-              onClick={() => {
-                setState('idle');
-                send('queue:leave', { tier: selectedTier });
-              }}
-              className="px-6 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold transition-all"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {state === 'match_found' && (
-          <div className="max-w-2xl mx-auto bg-slate-50 border border-slate-100 rounded-[2.5rem] p-12">
-            <h2 className="text-2xl font-black mb-6">Match Found!</h2>
-            <p className="text-slate-600 mb-4 font-medium">Stake: {stakeAmount} SOL</p>
-            <p className="text-amber-600 mb-6 text-sm font-bold">
-              Confirm & approve your stake in Phantom within {depositTimeoutSeconds}s
-            </p>
-            <button
-              onClick={handleConfirmDeposit}
-              disabled={loading}
-              className="w-full px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-black font-black transition-all flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  Approving...
-                </>
-              ) : (
-                <>
-                  <Wallet className="w-5 h-5" />
-                  Confirm & Approve Stake
-                </>
-              )}
-            </button>
-          </div>
-        )}
-
-        {state === 'waiting_deposits' && (
-          <div className="max-w-2xl mx-auto bg-slate-50 border border-slate-100 rounded-[2.5rem] p-12 text-center">
-            <Timer className="w-12 h-12 mx-auto mb-4 text-emerald-500" />
-            <h2 className="text-2xl font-black mb-4">Waiting for opponent...</h2>
-            <p className="text-4xl font-mono font-black text-emerald-600">{depositTimeoutSeconds}s</p>
-          </div>
-        )}
-
-        {state === 'active' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            <div className="lg:col-span-6">
-              <div className="bg-white p-6 md:p-10 rounded-[3.5rem] shadow-2xl shadow-slate-200 border border-slate-100">
-                <div className="w-full max-w-[500px] mx-auto rounded-2xl overflow-hidden border-[12px] border-slate-50 shadow-inner mb-6">
+          {/* CENTER BOARD */}
+          <div className="lg:col-span-6 relative">
+            {!loading && position && (
+              <div className="w-full max-w-[500px] mx-auto rounded-2xl overflow-hidden border-[12px] border-slate-50 shadow-inner relative">
+                <div className={opponentLives === 0 ? "blur-sm" : ""}>
                   <Chessboard
                     boardOrientation={playerColor}
                     options={{
@@ -407,89 +695,108 @@ export default function Duel() {
                       squareStyles: { ...lastMoveSquares, ...optionSquares },
                       id: "duel-board",
                       arePiecesDraggable: (piece) => {
-                        if (!playerColor) return false;
+                        if (!playerColor || playerLives === 0) return false;
                         return playerColor === 'white' ? piece.color === 'w' : piece.color === 'b';
                       },
                     }}
                   />
                 </div>
-                <div className="text-center">
-                  <p className="text-xs font-black uppercase tracking-[0.15em] italic mb-2">{playerColor} to move</p>
-                  <div className="text-3xl font-mono font-black text-emerald-600">
-                    {Math.floor(timerSeconds / 60)}:{(timerSeconds % 60).toString().padStart(2, '0')}
+                {opponentLives === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-lg">
+                    <div className="text-center">
+                      <p className="text-white font-black text-2xl">Waiting for opponent</p>
+                      <p className="text-white/80 text-sm mt-2">to finish their game</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===============================
+  // GAME ENDED
+  // ===============================
+  if (state === "ended" && result) {
+    const isWinner = playerRole === "player_a" ? result.winnerId === user?.id : result.winnerId === user?.id;
+    const isDraw = result.isDraw;
+    const headline = isDraw ? "Draw" : isWinner ? "Victory!" : "Defeat";
+    const headlineColor = isDraw ? "text-slate-400" : isWinner ? "text-emerald-600" : "text-red-500";
+
+    return (
+      <div className="min-h-screen bg-white text-slate-900 font-sans p-4 md:p-8 lg:p-12 relative overflow-hidden">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:32px_32px] opacity-40"></div>
+
+        <div className="max-w-3xl mx-auto">
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-2 text-slate-400 hover:text-black font-bold transition-all mb-8 group cursor-pointer"
+          >
+            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+            Back to Dashboard
+          </button>
+
+          <div className={`bg-gradient-to-br ${isDraw ? "from-slate-900 to-slate-800" : isWinner ? "from-emerald-900 to-emerald-800" : "from-red-900 to-red-800"} rounded-[3rem] p-8 md:p-12 text-white relative overflow-hidden shadow-2xl`}>
+            <div className="relative z-10">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400 mb-2">Match Complete</p>
+              <h2 className={`text-4xl md:text-5xl font-black italic tracking-tighter mb-2 ${headlineColor}`}>{headline}</h2>
+              <p className="text-slate-300 text-sm mb-8">
+                {result.playerASolved} vs {result.playerBSolved} puzzles solved
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 mt-6">
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-300 mb-3">Your Stats</div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm">Solved</span>
+                      <span className="font-bold text-emerald-400">{result.playerASolved}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm">Failed</span>
+                      <span className="font-bold text-red-400">{puzzlesFailed}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm">Lives Used</span>
+                      <span className="font-bold">{3 - playerLives}/3</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-300 mb-3">Opponent</div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm">Solved</span>
+                      <span className="font-bold text-emerald-400">{result.playerBSolved}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm">Failed</span>
+                      <span className="font-bold text-red-400">{opponentPuzzlesFailed}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm">Lives Used</span>
+                      <span className="font-bold">{3 - opponentLives}/3</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="lg:col-span-6 space-y-6">
-              <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl">
-                <div className="flex items-center gap-3 mb-4 text-emerald-400">
-                  <span className="text-[10px] font-black uppercase tracking-widest">You</span>
-                </div>
-                <p className="text-3xl font-black italic tracking-tighter mb-1">{puzzlesSolvedPlayer}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Puzzles Solved</p>
-                <p className="text-sm text-slate-500 font-bold mt-4 uppercase tracking-tight">{puzzlesFailedPlayer} Failed</p>
-              </div>
-
-              <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl">
-                <div className="flex items-center gap-3 mb-4 text-red-400">
-                  <span className="text-[10px] font-black uppercase tracking-widest">Opponent</span>
-                </div>
-                <p className="text-3xl font-black italic tracking-tighter mb-1">{puzzlesSolvedOpponent}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Puzzles Solved</p>
-                <p className="text-sm text-slate-500 font-bold mt-4 uppercase tracking-tight">{puzzlesFailedOpponent} Failed</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {state === 'ended' && (
-          <div className="max-w-3xl mx-auto bg-slate-900 rounded-[3rem] p-8 md:p-12 text-white relative overflow-hidden shadow-2xl shadow-slate-200">
-            <div className="relative z-10">
-              <Trophy className="w-16 h-16 mx-auto mb-6 text-emerald-400" />
-              <h2 className="text-4xl font-black italic tracking-tighter text-center mb-8">Duel Complete!</h2>
-              <div className="grid grid-cols-2 gap-6 mb-10">
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-2">Your Score</p>
-                  <p className="text-3xl font-black italic">{puzzlesSolvedPlayer}</p>
-                  <p className="text-xs text-slate-400 font-bold mt-2">solved · {puzzlesFailedPlayer} failed</p>
-                </div>
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-red-400 mb-2">Opponent Score</p>
-                  <p className="text-3xl font-black italic">{puzzlesSolvedOpponent}</p>
-                  <p className="text-xs text-slate-400 font-bold mt-2">solved · {puzzlesFailedOpponent} failed</p>
-                </div>
-              </div>
-              <div className="text-center mb-10 py-6 border-t border-b border-white/10">
-                {puzzlesSolvedPlayer > puzzlesSolvedOpponent ? (
-                  <>
-                    <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-emerald-400" />
-                    <p className="text-3xl font-black italic text-emerald-400">You Won!</p>
-                  </>
-                ) : puzzlesSolvedPlayer < puzzlesSolvedOpponent ? (
-                  <>
-                    <XCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
-                    <p className="text-3xl font-black italic text-red-400">You Lost</p>
-                  </>
-                ) : (
-                  <>
-                    <Users className="w-12 h-12 mx-auto mb-4 text-emerald-400" />
-                    <p className="text-3xl font-black italic text-emerald-400">Draw</p>
-                  </>
-                )}
-              </div>
               <button
-                onClick={() => setState('idle')}
-                className="w-full px-6 py-4 rounded-2xl bg-emerald-400 hover:bg-emerald-300 text-black font-black transition-all transform hover:scale-[1.01] active:scale-[0.99]"
+                onClick={() => navigate("/dashboard")}
+                className="w-full bg-emerald-400 text-black py-4 rounded-2xl font-black text-lg hover:bg-emerald-300 transition-all cursor-pointer"
               >
-                Play Again
+                Return to Dashboard
               </button>
             </div>
-            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full"></div>
           </div>
-        )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  return null;
 }

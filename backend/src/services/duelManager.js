@@ -3,8 +3,9 @@ import { Chess } from 'chess.js';
 import { supabase } from '../config/supabase.js';
 import { getPuzzleById, getPuzzleByRating } from './puzzleLoader.js';
 
-// In-memory duel state: sessionId -> { players, status, timer, disconnects }
+// In-memory duel state: sessionId -> { players, status, timer, disconnects, puzzle }
 const activeMatches = new Map();
+export const puzzleState = new Map(); // sessionId -> { fen, solution: [moves], playerASolutionIndex, playerBSolutionIndex }
 
 // Queue by tier: tier -> [{ userId, joinedAt, banUntil }]
 const matchQueues = {
@@ -109,22 +110,41 @@ export class DuelManager {
 
     if (!session) throw new Error('Session not found');
 
-    let depositedKey = null;
+    let updateData = {};
     if (session.player_a_id === userId) {
-      depositedKey = 'player_a_deposited';
+      updateData.player_a_deposited = true;
     } else if (session.player_b_id === userId) {
-      depositedKey = 'player_b_deposited';
+      updateData.player_b_deposited = true;
     } else {
       throw new Error('Player not in this session');
     }
 
-    // Update session to mark player as ready for deposit
+    // Mark this player as deposited
     await supabase
       .from('duel_sessions')
-      .update({ status: 'active', started_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', sessionId);
 
-    return 'active';
+    // Refetch the session to see current state of both players
+    const { data: updatedSession } = await supabase
+      .from('duel_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
+
+    // Check if both players have now deposited
+    const bothDeposited = updatedSession.player_a_deposited && updatedSession.player_b_deposited;
+
+    if (bothDeposited) {
+      // Both players confirmed — activate the match
+      await supabase
+        .from('duel_sessions')
+        .update({ status: 'active', started_at: new Date().toISOString() })
+        .eq('id', sessionId);
+      return 'both_confirmed';
+    } else {
+      return 'waiting_for_other_player';
+    }
   }
 
   static registerSocket(sessionId, userId, socket) {

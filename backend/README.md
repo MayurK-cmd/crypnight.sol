@@ -1,162 +1,273 @@
-# Backend — CrypNight.sol Express API
+# Crypnight Backend
 
-Node.js + Express server handling authentication, game logic, and on-chain payouts via Magic Block ER.
+Express.js + WebSocket server powering Solo and Duel game modes with real-time puzzle distribution, move validation, and on-chain settlement integration.
 
-## Setup
+## Overview
+
+The backend handles:
+- **Authentication**: Supabase JWT from httpOnly cookies
+- **Puzzle Loading**: Rated database queries (100�2800 ELO)
+- **Solo Mode**: Magic Block integration for off-chain compute + on-chain settlement
+- **Duel Mode**: Real-time WebSocket matchmaking, per-player puzzle progression, lives tracking
+- **Settlement**: Draw refunds + winner payout logic
+- **Leaderboard**: User stats and ranking
+
+## Tech Stack
+
+- **Framework**: Express.js
+- **WebSocket**: ws library
+- **Database**: Supabase (PostgreSQL)
+- **Blockchain**: Solana (Anchor programs, Magic Block)
+- **Chess**: chess.js for move validation
+
+## Getting Started
 
 ### Prerequisites
-- Node.js 18+ (`node --version`)
-- npm 9+
-- Supabase project (account + API keys)
-- Solana devnet account with SOL
+- Node.js 18+
+- Supabase account with puzzle database
+- Solana Devnet RPC access
 
 ### Installation
 
-```bash
-cd backend
+\\\ash
 npm install
-```
+npm run dev
+\\\
 
-### Configuration
+Server runs on \http://localhost:5000\.
 
-Create `.env` file:
+## Environment Configuration
 
-```env
+\\\env
+# Server
 PORT=5000
 NODE_ENV=development
 
+# Solana Programs
+SOLANA_RPC_URL=https://api.devnet.solana.com
+SOLANA_PROGRAM_ID=DKoawaEk5pJj1npwNYXeCCPF3Uqzxahokq67NY387qbK
+DUEL_PROGRAM_ID=EzkHbrB8bTWPVevB9X1AySwt2fAtjqEnZkAnihjZfcEc
+PLATFORM_TREASURY_PUBKEY=omyRQ6Ynne5seohfqiMQRPyaMuSkPDi9gksUeKm4oi6
+DUEL_TREASURY_PUBKEY=6kcSoKW35mTzhf8YCyGwwzPZJBMEH7cVNEZQcohZdgJk
+
+# Magic Block (off-chain compute)
+MAGICBLOCK_ROUTER_URL=https://devnet-router.magicblock.app
+MAGICBLOCK_WS_URL=wss://devnet-router.magicblock.app
+
 # Supabase
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+SUPABASE_URL=https://etkfbdivtlgdqzwhckbd.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_key
+
+# Authority keypair for transactions
+PLATFORM_AUTHORITY_PRIVATE_KEY=your_keypair_bytes
 
 # CORS
 CORS_ORIGIN=http://localhost:5173
 FRONTEND_URL=http://localhost:5173
 
-# Solana
-SOLANA_RPC_URL=https://api.devnet.solana.com
-SOLANA_PROGRAM_ID=<your-deployed-program-id>
-PLATFORM_TREASURY_PUBKEY=<your-treasury-pda>
-PLATFORM_AUTHORITY_PRIVATE_KEY=<your-authority-private-key-base58>
+# Demo (testing)
+DEMO_ESCROW_PDA=8iXhZUk7ZdumVE8aWiHqmMnDHdTtTbjj8YRmiAf4vdKx
+\\\
 
-# Magic Block ER
-MAGICBLOCK_ROUTER_URL=https://devnet-router.magicblock.app
-MAGICBLOCK_WS_URL=wss://devnet-router.magicblock.app
+## Project Structure
 
-# Game
-PUZZLES_PER_SESSION=10
-```
-
-### Database
-
-Run migrations in Supabase SQL editor (order matters):
-```
-docs/migrations/001_schema.sql
-docs/migrations/002_audit_log.sql
-docs/migrations/003_indexes.sql
-```
-
-### Development
-
-```bash
-node index.js
-```
-
-Server runs at `http://localhost:5000`.
-
-### Key Endpoints
-
-- `POST /api/auth/signup` — Register with email
-- `POST /api/auth/login` — Login
-- `POST /api/user/link-wallet` — Connect Phantom wallet
-- `POST /api/solo/start-session` — Begin 10-puzzle run
-- `POST /api/solo/submit-move` — Move validation
-- `POST /api/solo/end-session` — Finish session, trigger payout
-- `GET /api/leaderboard/global` — Global rankings
-
-### WebSocket
-
-Real-time duel matchmaking via WebSocket at `ws://localhost:5000/ws/duel`:
-
-**Events:**
-- `duel:search` — Join matchmaking queue for a tier
-- `match:found` — Both players paired, puzzle sent
-- `duel:start` — Game starts, FEN position received
-- `move:made` — Player submits move, validated server-side
-- `match:end` — Winner determined, payouts triggered
-
-### Payout System & Magic Block ER
-
-Payouts execute on **Magic Block Ephemeral Rollups** when a session or duel ends:
-
-- **Treasury PDA** holds SOL (funded via fund-treasury.js)
-- **Authority account** signs transactions (private key in PLATFORM_AUTHORITY_PRIVATE_KEY)
-- **ER Connection** sends transactions to Magic Block router (separate shard from Solana)
-- **Confirmation:** ~1-2 seconds (vs. Solana's ~13s slot finality)
-- **Fee:** 3% retained by platform, remainder to player
-
-Test payouts locally:
-```bash
-node test-payout-cjs.js
-```
-
-Payouts are **final on ER immediately** — no rollback risk after confirmation. Backend verifies puzzle/duel outcome server-side before sending payout tx.
-
-### Magic Block Integration
-
-- **Router URL:** `https://devnet-router.magicblock.app` (ER shard endpoint)
-- **WS URL:** `wss://devnet-router.magicblock.app` (for real-time settlement monitoring)
-- **Benefits:** Instant finality, low cost, no slot-based delays, player sees balance update immediately
-
-See [Magic Block Docs](https://docs.magicblock.io) for architecture details.
-
-## Duel Mode
-
-Real-time multiplayer puzzle battles via WebSocket.
-
-### Endpoints
-
-- `POST /api/duel/search` — Join matchmaking queue (body: `{tier: "beginner"|"intermediate"|"pro"|"gm"}`)
-- `POST /api/duel/submit-move` — Validate move in active duel (body: `{sessionId, move, ...}`)
-- `GET /api/duel/:sessionId` — Get duel status
-
-### WebSocket Flow
-
-WebSocket at `ws://localhost:5000/ws/duel` handles matchmaking and real-time gameplay:
-
-1. **Search:** Client sends `duel:search` → joins tier queue
-2. **Match Found:** Server broadcasts `match:found` to both players + puzzle FEN
-3. **Moves:** Players send moves → server validates → broadcasts `move:made` to both
-4. **End:** First to solve or timer expires → `match:end` + payouts triggered
-
-Authentication via JWT cookie (extracted in upgrade handler).
-
-### Puzzle Distribution
-
-- One puzzle per duel (stored in `duel_sessions.current_puzzle_fen`)
-- Both players validate moves against same puzzle
-- Prevents cheating via divergent puzzle state
-
----
-
-```
+\\\
 src/
-├── routes/           # API endpoint definitions
-├── controllers/      # Endpoint handlers + business logic
-├── services/
-│   ├── payoutService.js    # On-chain payout via Magic Block ER
-│   ├── puzzleLoader.js     # CSV → database preload
-│   └── rewardCalculator.js # ELO + multiplier math
-├── config/
-│   └── solana.js     # Solana connections (baseConnection, erConnection)
-└── middleware/
-    ├── auth.js       # JWT + wallet verification
-    ├── rateLimiter.js
-    └── auditLog.js   # Action logging
-```
++-- controllers/
+�   +-- duel.controller.js       # Duel settlement endpoint
+�   +-- user.controller.js       # Profile, leaderboard
++-- services/
+�   +-- duelSocket.js            # WebSocket duel logic
+�   +-- duelManager.js           # Queue, matchmaking, state
+�   +-- duelPayoutService.js     # Solana settlement
+�   +-- puzzleLoader.js          # Puzzle queries
++-- routes/
+�   +-- duel.routes.js           # /api/duel/*
+�   +-- user.routes.js           # /api/user/*
++-- config/
+�   +-- solana.js                # Connection, keypair setup
+�   +-- supabase.js              # Client initialization
++-- utils/
+    +-- rewardCalculator.js      # Streak multipliers
+    +-- validators.js            # Input validation
+\\\
 
-### Deployment (Render)
+## API Reference
 
-Connect Git repo to Render, set env vars, deploy.
+### REST Endpoints
 
-Deployed at `https://your-backend.onrender.com` (example).
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | \/api/duel/queue/:tier\ | Check queue length |
+| POST | \/api/duel/settle\ | Settle completed duel (refund/payout) |
+| GET | \/api/user/profile\ | Fetch user stats |
+| GET | \/api/leaderboard\ | Top 100 players |
+
+**POST /api/duel/settle**
+
+Request:
+\\\json
+{
+  \"matchId\": \"uuid\",
+  \"playerASolved\": 3,
+  \"playerBSolved\": 3
+}
+\\\
+
+Response (draw):
+\\\json
+{
+  \"status\": \"refunded\",
+  \"reason\": \"draw\",
+  \"message\": \"Both players refunded their stakes.\"
+}
+\\\
+
+Response (winner):
+\\\json
+{
+  \"status\": \"settled\",
+  \"winnerId\": \"user-id\",
+  \"playerASolved\": 5,
+  \"playerBSolved\": 2
+}
+\\\
+
+## WebSocket Protocol
+
+Connect: \ws://localhost:5000/ws/duel\
+
+Authentication via JWT in \uth_token\ cookie (set by frontend on Phantom login).
+
+### Message Types
+
+**queue:join** (C?S)
+\\\json
+{ \"type\": \"queue:join\", \"tier\": \"beginner\" }
+\\\
+
+**match:found** (S?C)
+\\\json
+{
+  \"type\": \"match:found\",
+  \"matchId\": \"uuid\",
+  \"tier\": \"beginner\",
+  \"stakeSol\": 0.05,
+  \"opponent\": { \"username\": \"opp\", \"rating\": 1600 },
+  \"role\": \"player_a\"
+}
+\\\
+
+**duel:start** (S?C)
+\\\json
+{
+  \"type\": \"duel:start\",
+  \"matchId\": \"uuid\",
+  \"puzzle\": { \"puzzle_id\": 1, \"fen\": \"...\", \"rating\": 1600 },
+  \"durationMs\": 180000,
+  \"startedAt\": 1691234567890
+}
+\\\
+
+**move:submit** (C?S)
+\\\json
+{ \"type\": \"move:submit\", \"matchId\": \"uuid\", \"move\": \"e2e4\" }
+\\\
+
+**puzzle:solved** (S?C)
+\\\json
+{ \"type\": \"puzzle:solved\", \"matchId\": \"uuid\" }
+\\\
+
+**puzzle:failed** (S?C)
+\\\json
+{ \"type\": \"puzzle:failed\", \"matchId\": \"uuid\", \"livesRemaining\": 2 }
+\\\
+
+**opponent:out_of_lives** (S?C)
+\\\json
+{ \"type\": \"opponent:out_of_lives\", \"matchId\": \"uuid\" }
+\\\
+
+## Services
+
+### duelSocket.js
+Handles all WebSocket messages:
+- \handleQueueJoin\: Add to matchmaking queue, find/create match
+- \handleDepositConfirm\: Mark player deposited, broadcast when both ready
+- \handleStartDuel\: Load puzzle, initialize per-player puzzle state
+- \handleMoveSubmit\: Validate move, handle correct/wrong/solve, load next puzzle
+
+Per-player puzzle state:
+\\\javascript
+puzzleState.set(matchId, {
+  playerAPuzzle: { fen, solution, solutionIndex },
+  playerBPuzzle: { fen, solution, solutionIndex },
+  playerALives: 3,
+  playerBLives: 3,
+})
+\\\
+
+### duelManager.js
+Queue and matchmaking:
+- \ddToQueue(userId, tier)\: Add to tier queue, match if pair found
+- \emoveFromQueue(userId, tier)\: Remove from queue
+- \getQueueStatus(tier)\: Return queue length
+
+### duelPayoutService.js
+Solana settlement:
+- \settleDuel\: Transfer pot to winner
+- \efundDuel\: Return stakes to both players
+
+### puzzleLoader.js
+- \getPuzzleByRating(minRating, maxRating)\: Query Supabase for puzzle in range
+
+## Smart Contracts
+
+### Solo Program
+**Address:** [\DKoawaEk5pJj1npwNYXeCCPF3Uqzxahokq67NY387qbK\](https://explorer.solana.com/address/DKoawaEk5pJj1npwNYXeCCPF3Uqzxahokq67NY387qbK?cluster=devnet)
+
+Off-chain puzzle settling via Magic Block.
+
+### Duel Program
+**Address:** [\EzkHbrB8bTWPVevB9X1AySwt2fAtjqEnZkAnihjZfcEc\](https://explorer.solana.com/address/EzkHbrB8bTWPVevB9X1AySwt2fAtjqEnZkAnihjZfcEc?cluster=devnet)
+
+**Treasury:** [\6kcSoKW35mTzhf8YCyGwwzPZJBMEH7cVNEZQcohZdgJk\](https://explorer.solana.com/address/6kcSoKW35mTzhf8YCyGwwzPZJBMEH7cVNEZQcohZdgJk?cluster=devnet)
+
+Manages duel escrows and settlement.
+
+## Testing
+
+### WebSocket Testing
+\\\ash
+wscat -c ws://localhost:5000/ws/duel
+{\"type\":\"queue:join\",\"tier\":\"beginner\"}
+\\\
+
+### Manual Flow
+1. Open two terminals, connect both clients
+2. Both join queue ? match found
+3. Both confirm deposits ? both:deposited
+4. Both start duel ? receive puzzle + timer
+5. Submit moves ? watch validation and opponent updates
+
+## Deployment
+
+### Devnet (Development)
+\\\ash
+npm run build
+npm start
+\\\
+
+Deploy to Railway, Fly.io, or similar.
+
+### Mainnet (Production)
+- Update \.env\ with mainnet RPC + contract IDs
+- Redeploy contracts (audit required)
+- Increase stake amounts
+
+## See Also
+
+- [Frontend README](../frontend/README.md) � Client implementation
+- [Contracts README](../crypnight-contracts/README.md) � Solana programs
+- [Root README](../README.md) � Overview
