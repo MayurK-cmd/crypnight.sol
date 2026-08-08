@@ -154,9 +154,33 @@ export default function Duel() {
   useEffect(() => {
     if (!socket) return;
 
-    const handleDuelStart = ({ puzzle: puz, durationMs, startedAt }) => {
+    const handleDuelStart = ({ puzzle: puz, autoPlayedMove, durationMs, startedAt }) => {
       setState("game");
-      initializeGame(puz);
+
+      // Initialize game with puzzle FEN
+      const game = new Chess(puz.fen);
+      chessRef.current = game;
+      setPosition(game.fen());
+      setPuzzle({
+        puzzle_id: puz.puzzle_id,
+        fen: puz.fen,
+        rating: puz.rating,
+      });
+
+      // Determine player color from FEN's second token
+      const activeColor = puz.fen.split(' ')[1];
+      setPlayerColor(activeColor === 'w' ? 'white' : 'black');
+
+      // Display auto-played move with yellow highlighting
+      if (autoPlayedMove) {
+        const autoFrom = autoPlayedMove.slice(0, 2);
+        const autoTo = autoPlayedMove.slice(2, 4);
+        setLastMoveSquares({
+          [autoFrom]: { background: 'rgba(255, 200, 87, 0.5)' },
+          [autoTo]: { background: 'rgba(255, 152, 0, 0.6)' },
+        });
+      }
+
       setTimer(Math.ceil(durationMs / 1000));
     };
 
@@ -192,9 +216,33 @@ export default function Duel() {
   useEffect(() => {
     if (!socket) return;
 
-    const handleNewPuzzle = ({ matchId: mid, puzzle: puz }) => {
+    const handleNewPuzzle = ({ matchId: mid, puzzle: puz, autoPlayedMove }) => {
       if (mid !== matchId) return;
-      initializeGame(puz);
+
+      const game = new Chess(puz.fen);
+      chessRef.current = game;
+      setPosition(game.fen());
+      setPuzzle({
+        puzzle_id: puz.puzzle_id,
+        fen: puz.fen,
+        rating: puz.rating,
+      });
+
+      // Determine player color from FEN's second token
+      const activeColor = puz.fen.split(' ')[1];
+      setPlayerColor(activeColor === 'w' ? 'white' : 'black');
+
+      // Display auto-played move with yellow highlighting
+      if (autoPlayedMove) {
+        const autoFrom = autoPlayedMove.slice(0, 2);
+        const autoTo = autoPlayedMove.slice(2, 4);
+        setLastMoveSquares({
+          [autoFrom]: { background: 'rgba(255, 200, 87, 0.5)' },
+          [autoTo]: { background: 'rgba(255, 152, 0, 0.6)' },
+        });
+      } else {
+        setLastMoveSquares({});
+      }
     };
 
     onNewPuzzle(handleNewPuzzle);
@@ -211,6 +259,19 @@ export default function Duel() {
         setOpponentPuzzlesFailed(prev => prev + 1);
         if (data.opponentLivesRemaining !== undefined) {
           setOpponentLives(data.opponentLivesRemaining);
+        }
+      } else if (data.type === 'move:valid' && state === 'game') {
+        // My move was valid - auto-play the next move in solution
+        const game = chessRef.current;
+        if (data.opponentMove) {
+          const autoFrom = data.opponentMove.slice(0, 2);
+          const autoTo = data.opponentMove.slice(2, 4);
+          game.move({ from: autoFrom, to: autoTo, promotion: data.opponentMove[4] || 'q' });
+          setPosition(game.fen());
+          setLastMoveSquares({
+            [autoFrom]: { background: 'rgba(255, 200, 87, 0.5)' },
+            [autoTo]: { background: 'rgba(255, 152, 0, 0.6)' },
+          });
         }
       } else if (data.type === 'opponent:moved' && state === 'game') {
         const game = chessRef.current;

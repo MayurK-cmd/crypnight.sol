@@ -1,4 +1,5 @@
 import * as anchor from '@coral-xyz/anchor';
+import { createHash } from 'crypto';
 import { erConnection, getAuthorityKeypair } from '../config/solana.js';
 import { supabase } from '../config/supabase.js';
 
@@ -60,7 +61,7 @@ const getDuelProgram = async () => {
   const program = new anchor.Program(
     duelIdl,
     DUEL_PROGRAM_ID,
-    { connection: erConnection, wallet: { publicKey: getAuthorityKeypair().publicKey() } }
+    { connection: erConnection, wallet: { publicKey: getAuthorityKeypair().publicKey } }
   );
   return program;
 };
@@ -76,9 +77,9 @@ const getDuelTreasuryPda = () => {
 
 // Derive duel escrow PDA from match_id
 const getDuelEscrowPda = (matchId) => {
-  const matchIdBuffer = Buffer.from(matchId, 'utf-8');
+  const matchIdHash = createHash('sha256').update(matchId).digest();
   const [pda] = anchor.web3.PublicKey.findProgramAddressSync(
-    [DUEL_ESCROW_SEED, matchIdBuffer],
+    [DUEL_ESCROW_SEED, matchIdHash],
     new anchor.web3.PublicKey(DUEL_PROGRAM_ID)
   );
   return pda;
@@ -94,7 +95,7 @@ export const settleDuel = async ({ matchId, winnerWallet, session }) => {
 
     // Manually construct the instruction since we don't have full IDL
     const instruction = anchor.web3.SystemProgram.transfer({
-      fromPubkey: authority.publicKey(),
+      fromPubkey: authority.publicKey,
       toPubkey: new anchor.web3.PublicKey(winnerWallet),
       lamports: 1, // Placeholder — actual settlement happens in contract
     });

@@ -235,17 +235,40 @@ async function handleStartDuel(ws, data) {
     const solutionMoves = puzzle.Moves ? puzzle.Moves.split(' ') : [];
     console.log('[handleStartDuel] Solution has', solutionMoves.length, 'moves');
 
+    // Determine if even/odd move count and calculate initial state
+    const moveCount = solutionMoves.length;
+    const isEvenMoveCount = moveCount % 2 === 0;
+    let puzzleFen = puzzle.fen || puzzle.FEN;
+    let autoPlayedMove = null;
+    let initialProgressIndex = 0;
+
+    // For even-move puzzles, auto-play the first move
+    if (isEvenMoveCount && moveCount > 0) {
+      const { Chess } = await import('chess.js');
+      const game = new Chess(puzzleFen);
+      autoPlayedMove = solutionMoves[0];
+      game.move(autoPlayedMove, { sloppy: true });
+      puzzleFen = game.fen();
+      initialProgressIndex = 1;
+    }
+
+    // Calculate player color: if even moves, player gets opposite color of FEN
+    const fenTurnChar = puzzleFen.split(' ')[1];
+    const playerColorChar = isEvenMoveCount ? (fenTurnChar === 'w' ? 'b' : 'w') : fenTurnChar;
+
+    console.log('[handleStartDuel] Even moves:', isEvenMoveCount, 'Auto-played:', autoPlayedMove, 'Player color:', playerColorChar);
+
     // Store puzzle state in memory with per-player tracking
     puzzleState.set(matchId, {
       playerAPuzzle: {
-        fen: puzzle.fen || puzzle.FEN,
+        fen: puzzleFen,
         solution: solutionMoves,
-        solutionIndex: 0,
+        solutionIndex: initialProgressIndex,
       },
       playerBPuzzle: {
-        fen: puzzle.fen || puzzle.FEN,
+        fen: puzzleFen,
         solution: solutionMoves,
-        solutionIndex: 0,
+        solutionIndex: initialProgressIndex,
       },
       playerALives: 3,
       playerBLives: 3,
@@ -258,7 +281,7 @@ async function handleStartDuel(ws, data) {
       .update({
         status: 'active',
         current_puzzle_id: puzzle.puzzle_id || puzzle.PuzzleId,
-        current_puzzle_fen: puzzle.fen || puzzle.FEN,
+        current_puzzle_fen: puzzleFen,
         started_at: new Date().toISOString(),
       })
       .eq('id', matchId);
@@ -276,9 +299,10 @@ async function handleStartDuel(ws, data) {
       matchId,
       puzzle: {
         puzzle_id: puzzle.puzzle_id || puzzle.PuzzleId,
-        fen: puzzle.fen || puzzle.FEN,
+        fen: puzzleFen,
         rating: puzzle.rating || puzzle.Rating,
       },
+      autoPlayedMove,
       durationMs: 180000,
       startedAt: Date.now(),
     });
@@ -376,17 +400,33 @@ async function handleMoveSubmit(ws, data) {
 
       if (nextPuzzle) {
         const nextSolution = nextPuzzle.Moves ? nextPuzzle.Moves.split(' ') : [];
+        const moveCount = nextSolution.length;
+        const isEvenMoveCount = moveCount % 2 === 0;
+        let nextFen = nextPuzzle.fen || nextPuzzle.FEN;
+        let autoPlayedMove = null;
+        let initialProgressIndex = 0;
+
+        // For even-move puzzles, auto-play the first move
+        if (isEvenMoveCount && moveCount > 0) {
+          const { Chess } = await import('chess.js');
+          const game = new Chess(nextFen);
+          autoPlayedMove = nextSolution[0];
+          game.move(autoPlayedMove, { sloppy: true });
+          nextFen = game.fen();
+          initialProgressIndex = 1;
+        }
+
         if (isPlayerA) {
           puzState.playerAPuzzle = {
-            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            fen: nextFen,
             solution: nextSolution,
-            solutionIndex: 0,
+            solutionIndex: initialProgressIndex,
           };
         } else {
           puzState.playerBPuzzle = {
-            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            fen: nextFen,
             solution: nextSolution,
-            solutionIndex: 0,
+            solutionIndex: initialProgressIndex,
           };
         }
 
@@ -395,9 +435,10 @@ async function handleMoveSubmit(ws, data) {
           matchId,
           puzzle: {
             puzzle_id: nextPuzzle.puzzle_id || nextPuzzle.PuzzleId,
-            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            fen: nextFen,
             rating: nextPuzzle.rating || nextPuzzle.Rating,
           },
+          autoPlayedMove,
         }));
       }
       return;
@@ -437,17 +478,33 @@ async function handleMoveSubmit(ws, data) {
 
       if (nextPuzzle) {
         const nextSolution = nextPuzzle.Moves ? nextPuzzle.Moves.split(' ') : [];
+        const moveCount = nextSolution.length;
+        const isEvenMoveCount = moveCount % 2 === 0;
+        let nextFen = nextPuzzle.fen || nextPuzzle.FEN;
+        let autoPlayedMove = null;
+        let initialProgressIndex = 0;
+
+        // For even-move puzzles, auto-play the first move
+        if (isEvenMoveCount && moveCount > 0) {
+          const { Chess } = await import('chess.js');
+          const game = new Chess(nextFen);
+          autoPlayedMove = nextSolution[0];
+          game.move(autoPlayedMove, { sloppy: true });
+          nextFen = game.fen();
+          initialProgressIndex = 1;
+        }
+
         if (isPlayerA) {
           puzState.playerAPuzzle = {
-            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            fen: nextFen,
             solution: nextSolution,
-            solutionIndex: 0,
+            solutionIndex: initialProgressIndex,
           };
         } else {
           puzState.playerBPuzzle = {
-            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            fen: nextFen,
             solution: nextSolution,
-            solutionIndex: 0,
+            solutionIndex: initialProgressIndex,
           };
         }
 
@@ -456,9 +513,10 @@ async function handleMoveSubmit(ws, data) {
           matchId,
           puzzle: {
             puzzle_id: nextPuzzle.puzzle_id || nextPuzzle.PuzzleId,
-            fen: nextPuzzle.fen || nextPuzzle.FEN,
+            fen: nextFen,
             rating: nextPuzzle.rating || nextPuzzle.Rating,
           },
+          autoPlayedMove,
         }));
       }
     } else {
