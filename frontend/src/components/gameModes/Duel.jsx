@@ -235,10 +235,10 @@ export default function Duel() {
           setPosition(game.fen());
         }
       } else if (data.type === 'duel:out_of_lives') {
-        // Opponent ran out of lives
-        setOpponentLives(0);
+        // I ran out of lives - show blur screen and wait
+        setPlayerLives(0);
       } else if (data.type === 'opponent:out_of_lives') {
-        // Opponent is out of lives, we win
+        // Opponent ran out of lives - I win
         setSessionComplete(true);
         setResult({
           reason: 'opponent_out_of_lives',
@@ -685,7 +685,7 @@ export default function Duel() {
           <div className="lg:col-span-6 relative">
             {!loading && position && (
               <div className="w-full max-w-[500px] mx-auto rounded-2xl overflow-hidden border-[12px] border-slate-50 shadow-inner relative">
-                <div className={opponentLives === 0 ? "blur-sm" : ""}>
+                <div className={playerLives === 0 ? "blur-sm" : ""}>
                   <Chessboard
                     boardOrientation={playerColor}
                     options={{
@@ -701,7 +701,7 @@ export default function Duel() {
                     }}
                   />
                 </div>
-                {opponentLives === 0 && (
+                {playerLives === 0 && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-lg">
                     <div className="text-center">
                       <p className="text-white font-black text-2xl">Waiting for opponent</p>
