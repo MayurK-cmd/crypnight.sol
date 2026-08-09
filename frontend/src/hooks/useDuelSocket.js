@@ -19,12 +19,6 @@ export function useDuelSocket() {
     const host = backendUrl.replace(/^https?:\/\//, '');
     const url = `${protocol}//${host}/ws/duel`;
 
-    console.log('[useDuelSocket] VITE_BACKEND_URL:', import.meta.env.VITE_BACKEND_URL);
-    console.log('[useDuelSocket] computed backendUrl:', backendUrl);
-    console.log('[useDuelSocket] protocol:', protocol);
-    console.log('[useDuelSocket] host:', host);
-    console.log('[useDuelSocket] final WebSocket URL:', url);
-
     const ws = new WebSocket(url);
 
     ws.onopen = () => {
