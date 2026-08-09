@@ -6,7 +6,7 @@ const isProd = process.env.NODE_ENV === 'production';
 const cookieOpts = {
   httpOnly: true,
   secure: isProd,
-  sameSite: 'strict',
+  sameSite: isProd ? 'none' : 'strict',
   maxAge: 24 * 60 * 60 * 1000, // 24 hours
   path: '/',
 };
