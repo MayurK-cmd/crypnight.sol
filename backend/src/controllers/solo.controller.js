@@ -1,5 +1,5 @@
 import { supabase } from '../config/supabase.js';
-import { getPuzzleById, getPuzzleByRating } from '../services/puzzleLoader.js';
+import { loadPuzzles, getPuzzleById, getPuzzleByRating } from '../services/puzzleLoader.js';
 import { AuditAction, getClientIp, logAction } from '../utils/auditLog.js';
 import {
   calculateReward,
@@ -123,52 +123,45 @@ export const endSoloSession = async ({ userId, sessionId, reason, ipAddress = nu
   let onChainPayout = null;
 
   if (totalReward > 0) {
-    // Non-blocking payout: fire and forget, handle errors gracefully
-    const payoutPromise = (async () => {
-      try {
-        const { data: user } = await supabase
-          .from('game_profiles')
-          .select('wallet_address')
-          .eq('user_id', userId)
-          .single();
+    // Await payout so txSignature is available in response
+    try {
+      const { data: user } = await supabase
+        .from('game_profiles')
+        .select('wallet_address')
+        .eq('user_id', userId)
+        .single();
 
-        if (user?.wallet_address) {
-          const result = await payReward(user.wallet_address, totalReward);
-          txSignature = result.signature;
-          onChainPayout = result.playerPayout;
-
-          await logAction({
-            userId,
-            action: 'game.payout_completed',
-            metadata: {
-              session_id: sessionId,
-              rewardSol: totalReward,
-              txSignature,
-              onChainPayout,
-            },
-            ipAddress,
-          });
-        }
-      } catch (err) {
-        console.error('[payoutService] Payout failed:', err.message);
+      if (user?.wallet_address) {
+        const result = await payReward(user.wallet_address, totalReward);
+        txSignature = result.signature;
+        onChainPayout = result.playerPayout;
 
         await logAction({
           userId,
-          action: 'game.payout_failed',
+          action: 'game.payout_completed',
           metadata: {
             session_id: sessionId,
             rewardSol: totalReward,
-            error: err.message,
+            txSignature,
+            onChainPayout,
           },
           ipAddress,
         });
       }
-    })();
+    } catch (err) {
+      console.error('[payoutService] Payout failed:', err.message);
 
-    // Don't await, don't crash if it fails
-    payoutPromise.catch(err => {
-      console.error('[payoutService] Unhandled payout error:', err);
-    });
+      await logAction({
+        userId,
+        action: 'game.payout_failed',
+        metadata: {
+          session_id: sessionId,
+          rewardSol: totalReward,
+          error: err.message,
+        },
+        ipAddress,
+      });
+    }
   }
 
   return {
@@ -197,34 +190,35 @@ export const startSoloSession = async (req, res) => {
 
     // Ensure user exists in public.users (for foreign key references in solo_sessions, etc.)
     // This handles users who signed up before game_profiles was the primary profile table.
-    const { data: existingUser } = await supabase
+    const { data: profile } = await supabase
+      .from('game_profiles')
+      .select('username, rating, tier, wallet_address')
+      .eq('user_id', userId)
+      .single();
+
+    if (!profile) {
+      return res.status(400).json({ error: 'User profile not found — complete setup first' });
+    }
+
+    const { error: upsertError } = await supabase
       .from('users')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
+      .upsert({
+        id: userId,
+        username: profile.username || null,
+        rating: profile.rating || 1000,
+        tier: profile.tier || null,
+      }, { onConflict: 'id' });
 
-    if (!existingUser) {
-      const { data: profile } = await supabase
-        .from('game_profiles')
-        .select('username, rating, tier, wallet_address')
-        .eq('user_id', userId)
-        .single();
-
-      await supabase
-        .from('users')
-        .insert({
-          id: userId,
-          username: profile?.username || null,
-          rating: profile?.rating || 1000,
-          tier: profile?.tier || null,
-          wallet_address: profile?.wallet_address || null,
-        });
+    if (upsertError && upsertError.code !== '23505') { // 23505 is unique violation
+      console.error('Error upserting user in users table:', upsertError.message, upsertError.details);
+      return res.status(500).json({ error: `Failed to sync user record: ${upsertError.message}` });
     }
 
     const existing = await fetchActiveSession(userId);
 
     if (existing && existing.puzzles_in_session < PUZZLES_PER_SESSION && !isStale(existing)) {
       // Resume the same session — frontend already has current_puzzle_id.
+      console.log(`[/solo/start] Found existing active session: ${existing.id}`);
       return res.json({
         session_id: existing.id,
         started_at: existing.started_at,
@@ -242,6 +236,7 @@ export const startSoloSession = async (req, res) => {
     // Close out any stale actives first (defensive — cron also handles
     // this, but we don't want a race).
     if (existing) {
+      console.log(`[/solo/start] Closing stale session: ${existing.id}`);
       await supabase
         .from('solo_sessions')
         .update({
@@ -276,8 +271,11 @@ export const startSoloSession = async (req, res) => {
       .single();
 
     if (error) {
+      console.error(`[/solo/start] Insert error: ${error.message}`);
       return res.status(500).json({ error: error.message });
     }
+
+    console.log(`[/solo/start] Created new session: ${data.id}`);
 
     return res.json({
       session_id: data.id,
@@ -391,6 +389,8 @@ export const submitSoloMove = async (req, res) => {
     const userId = req.user.id;
     const { session_id, move } = req.body;
 
+    await loadPuzzles();
+
     const session = await fetchActiveSession(userId);
     if (!session || session.id !== session_id) {
       return res.status(400).json({ error: 'Invalid session' });
@@ -402,7 +402,9 @@ export const submitSoloMove = async (req, res) => {
     }
 
     const puzzle = getPuzzleById(session.current_puzzle_id);
+    console.log(`[submitSoloMove] session.current_puzzle_id: ${session.current_puzzle_id}, puzzle found: ${!!puzzle}`);
     if (!puzzle) {
+      console.log(`[submitSoloMove] Puzzle not found. Attempting to load fresh puzzle...`);
       return res.status(404).json({ error: 'Puzzle missing from cache' });
     }
 
@@ -488,6 +490,8 @@ export const submitSoloAttempt = async (req, res) => {
   try {
     const userId = req.user.id;
     const { session_id } = req.body;
+
+    await loadPuzzles();
 
     const session = await fetchActiveSession(userId);
     if (!session || session.id !== session_id) {

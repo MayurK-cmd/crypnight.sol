@@ -14,8 +14,10 @@ export function useDuelSocket() {
 
   // Connect to WebSocket
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.hostname}:${import.meta.env.VITE_BACKEND_PORT || 5000}/ws/duel`;
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:5000`;
+    const protocol = backendUrl.startsWith('https') ? 'wss:' : 'ws:';
+    const host = backendUrl.replace(/^https?:\/\//, '');
+    const url = `${protocol}//${host}/ws/duel`;
 
     const ws = new WebSocket(url);
 

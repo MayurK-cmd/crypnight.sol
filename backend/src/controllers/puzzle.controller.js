@@ -96,10 +96,44 @@ export const getPuzzleForUser = async (req, res) => {
     if (active && active.puzzles_in_session < 10 && !isStale(active)) {
       sessionRow = active;
       sessionResumed = true;
+      console.log(`[/puzzle] Found active session: ${active.id}`);
 
       if (active.current_puzzle_id) {
         puzzle = getPuzzleById(active.current_puzzle_id);
       }
+    }
+
+    // If no active session, create one
+    if (!sessionRow) {
+      console.log(`[/puzzle] No active session found, creating new one`);
+      const { data: newSession, error: createError } = await supabase
+        .from('solo_sessions')
+        .insert({
+          user_id: userId,
+          tier: user.tier,
+          status: 'active',
+          puzzles_in_session: 0,
+          puzzles_solved: 0,
+          puzzles_failed: 0,
+          total_session_reward: 0,
+          last_puzzle_elo_delta: 0,
+          current_puzzle_id: null,
+          current_puzzle_solve_started_at: null,
+          current_puzzle_wrong_moves: 0,
+          progress_index: 0,
+          wrong_moves: 0,
+          player_color: null,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error(`[/puzzle] Failed to create session: ${createError.message}`);
+        return res.status(500).json({ error: 'Failed to create session' });
+      }
+
+      sessionRow = newSession;
+      console.log(`[/puzzle] Created new session: ${newSession.id}`);
     }
 
     if (!puzzle) {
@@ -133,6 +167,8 @@ export const getPuzzleForUser = async (req, res) => {
     const pickedFen = puzzle.fen || puzzle.FEN;
     const pickedPlayerColorChar = pickedFen.split(' ')[1];
 
+    console.log(`[/puzzle] Picked puzzle: ${pickedPuzzleId}, sessionRow exists: ${!!sessionRow}`);
+
     if (sessionRow && sessionRow.current_puzzle_id !== pickedPuzzleId) {
       const inSession = sessionRow.puzzles_in_session || 0;
       const moveCount = (puzzle.moves || puzzle.Moves || '').split(' ').filter(m => m).length;
@@ -142,7 +178,9 @@ export const getPuzzleForUser = async (req, res) => {
       const fenTurnChar = pickedFen.split(' ')[1];
       const pickedPlayerColorChar = isEvenMoveCount ? (fenTurnChar === 'w' ? 'b' : 'w') : fenTurnChar;
 
-      await supabase
+      console.log(`[/puzzle] Updating session ${sessionRow.id} with puzzle ${pickedPuzzleId}`);
+
+      const { error: updateError } = await supabase
         .from("solo_sessions")
         .update({
           current_puzzle_id: pickedPuzzleId,
@@ -152,8 +190,17 @@ export const getPuzzleForUser = async (req, res) => {
           player_color: pickedPlayerColorChar,
         })
         .eq("id", sessionRow.id);
+
+      if (updateError) {
+        console.error(`[/puzzle] Update error: ${updateError.message}`);
+      } else {
+        console.log(`[/puzzle] Session updated successfully`);
+      }
+
       sessionRow.current_puzzle_id = pickedPuzzleId;
       if (inSession < 1) sessionRow.puzzles_in_session = 1;
+    } else if (!sessionRow) {
+      console.log(`[/puzzle] No sessionRow found - cannot persist puzzle ID`);
     }
 
     // CRITICAL — strip the SAN solution. Destructure out so it cannot

@@ -3,6 +3,7 @@ import { parse } from 'csv-parse/sync';
 
 let puzzleCache = null;
 let isLoading = false;
+let loadError = null;
 
 /**
  * Check if puzzles are ready
@@ -25,11 +26,19 @@ export async function loadPuzzles() {
     while (isLoading) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
+    // After loading finishes, check for errors or cache
+    if (loadError) {
+      throw loadError;
+    }
+    if (!puzzleCache) {
+      throw new Error('Puzzle loading completed but cache is empty');
+    }
     return puzzleCache;
   }
 
   try {
     isLoading = true;
+    loadError = null;
     console.log('Loading puzzles from Supabase Storage...');
 
     // Download CSV from Supabase Storage
@@ -61,6 +70,7 @@ export async function loadPuzzles() {
 
   } catch (err) {
     console.error('Error loading puzzles:', err);
+    loadError = err;
     throw err;
   } finally {
     isLoading = false;

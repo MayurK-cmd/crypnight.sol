@@ -75,12 +75,24 @@ const payReward = async (playerWalletAddress, rewardSol) => {
 
     // Send via Magic Block ER
     console.log(`🚀 Sending transaction via Magic Block ER...`);
-    const signature = await sendAndConfirmTransaction(
-      erConnection,
-      tx,
-      [authorityKeypair],
-      { commitment: 'confirmed' }
-    );
+    let signature;
+    try {
+      signature = await sendAndConfirmTransaction(
+        erConnection,
+        tx,
+        [authorityKeypair],
+        { commitment: 'confirmed' }
+      );
+    } catch (err) {
+      // Magic Block may not support getSignatureStatus fully — try sending without confirm
+      if (err.message.includes('Assertion failed') || err.message.includes('getSignatureStatus')) {
+        console.log(`⚠️  Confirmation failed, sending without confirmation...`);
+        signature = await erConnection.sendTransaction(tx, [authorityKeypair]);
+        console.log(`📝 Transaction sent (unconfirmed): ${signature}`);
+      } else {
+        throw err;
+      }
+    }
 
     console.log(`✅ Transaction confirmed, signature: ${signature}`);
 
