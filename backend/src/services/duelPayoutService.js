@@ -1,5 +1,6 @@
 import * as anchor from '@coral-xyz/anchor';
 import { createHash } from 'crypto';
+import { sendAndConfirmTransaction } from '@solana/web3.js';
 import { erConnection, getAuthorityKeypair } from '../config/solana.js';
 import { supabase } from '../config/supabase.js';
 
@@ -58,12 +59,24 @@ const getDuelProgram = async () => {
     }
   }
 
-  const program = new anchor.Program(
-    duelIdl,
-    DUEL_PROGRAM_ID,
-    { connection: erConnection, wallet: { publicKey: getAuthorityKeypair().publicKey } }
-  );
-  return program;
+  try {
+    const authority = getAuthorityKeypair();
+    console.log('[getDuelProgram] Authority pubkey:', authority.publicKey.toBase58());
+    console.log('[getDuelProgram] DUEL_PROGRAM_ID:', DUEL_PROGRAM_ID);
+
+    const programId = new anchor.web3.PublicKey(DUEL_PROGRAM_ID);
+    console.log('[getDuelProgram] Converted programId:', programId.toBase58());
+
+    const program = new anchor.Program(
+      duelIdl,
+      programId,
+      new anchor.AnchorProvider(erConnection, authority, {})
+    );
+    return program;
+  } catch (err) {
+    console.error('[getDuelProgram] Error creating program:', err.message);
+    throw err;
+  }
 };
 
 // Derive duel treasury PDA
@@ -88,10 +101,8 @@ const getDuelEscrowPda = (matchId) => {
 export const settleDuel = async ({ matchId, winnerWallet, session }) => {
   try {
     const authority = getAuthorityKeypair();
-    const program = await getDuelProgram();
 
-    const escrowPda = getDuelEscrowPda(matchId);
-    const treasuryPda = getDuelTreasuryPda();
+    console.log(`\n💰 SETTLEMENT START - Match: ${matchId}, Winner: ${winnerWallet}\n`);
 
     // Manually construct the instruction since we don't have full IDL
     const instruction = anchor.web3.SystemProgram.transfer({
@@ -100,10 +111,21 @@ export const settleDuel = async ({ matchId, winnerWallet, session }) => {
       lamports: 1, // Placeholder — actual settlement happens in contract
     });
 
+    console.log(`✅ Transfer instruction created`);
+    console.log(`   From: ${authority.publicKey.toBase58()}`);
+    console.log(`   To: ${winnerWallet}`);
+
     const tx = new anchor.web3.Transaction().add(instruction);
 
-    const signature = await erConnection.sendTransaction(tx, [authority]);
-    await erConnection.confirmTransaction(signature, 'confirmed');
+    console.log(`🚀 Sending transaction via Magic Block ER...`);
+    const signature = await sendAndConfirmTransaction(
+      erConnection,
+      tx,
+      [authority],
+      { commitment: 'confirmed' }
+    );
+
+    console.log(`✅ Settlement transaction confirmed: ${signature}`);
 
     // Log to database
     await supabase
@@ -113,6 +135,8 @@ export const settleDuel = async ({ matchId, winnerWallet, session }) => {
         status: 'settled',
       })
       .eq('id', session.id);
+
+    console.log(`✅ Settlement recorded in database\n`);
 
     return { signature, status: 'settled' };
   } catch (error) {
